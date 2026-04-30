@@ -1,0 +1,150 @@
+.sidebar,
+.main {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-shell {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-shell > .sidebar {
+  flex: 0 0 auto;
+}
+
+.app-shell > .main {
+  flex: 1 1 auto;
+  min-height: 50vh;
+}
+
+.app-shell {
+  gap: 10px;
+  padding: 10px;
+}
+
+.app-shell > .sidebar,
+.app-shell > .main {
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.app-shell > .main {
+  background: rgba(15, 22, 45, 0.35);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.sidebar {
+  min-width: 340px;
+  max-width: 520px;
+  background: rgba(15, 22, 45, 0.72);
+  backdrop-filter: blur(10px);
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.main {
+  flex: 1;
+}
+
+.score-surface {
+  padding: 14px;
+  height: 100%;
+}
+
+.score-div {
+  width: 100%;
+  min-height: calc(100vh - 140px);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 14px;
+  overflow: auto;
+  padding: 10px;
+}
+
+.file-input {
+  max-width: 180px;
+}
+
+.label-title {
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.label-subtitle {
+  font-size: 12px;
+  opacity: 0.75;
+  margin-top: 3px;
+}
+
+.muted {
+  opacity: 0.65;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.error-text {
+  white-space: pre-wrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.part-item {
+  align-items: flex-start;
+}
+
+.part-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 220px;
+}
+
+.part-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.part-row.toggles {
+  justify-content: space-between;
+}
+
+.part-range {
+  width: 160px;
+}
+
+.mini {
+  width: 40px;
+  font-size: 12px;
+  opacity: 0.8;
+  text-align: right;
+}
+
+.footer-note {
+  padding: 14px 18px 20px;
+}
+
+@media (min-width: 900px) {
+  .app-shell {
+    flex-direction: row;
+    gap: 14px;
+    padding: 14px;
+  }
+
+  .app-shell > .sidebar {
+    flex: 0 0 460px;
+    max-height: calc(100vh - 28px);
+  }
+
+  .app-shell > .main {
+    flex: 1 1 auto;
+    max-height: calc(100vh - 28px);
+  }
+}
+

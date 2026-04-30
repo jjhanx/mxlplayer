@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">mxlplayer</string>
+    <string name="title_activity_main">mxlplayer</string>
+    <string name="package_name">com.mxlplayer.app</string>
+    <string name="custom_url_scheme">com.mxlplayer.app</string>
+</resources>
