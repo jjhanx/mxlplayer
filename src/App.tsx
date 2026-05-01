@@ -15,11 +15,99 @@ import {
   IonToolbar,
 } from '@ionic/react'
 import { pause, play, stop } from 'ionicons/icons'
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { OpenSheetMusicDisplay } from 'opensheetmusicdisplay'
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
+import type { GraphicalNote, Note } from 'opensheetmusicdisplay'
+import { OpenSheetMusicDisplay, PointF2D } from 'opensheetmusicdisplay'
 import PlaybackEngine from 'osmd-audio-player'
+import { PlaybackEvent, PlaybackState as EnginePlaybackState } from 'osmd-audio-player/dist/PlaybackEngine'
+import { getInstrumentIndexFromNote } from './audio/instrumentIndexFromNote'
 import { PlaybackMixer } from './audio/playbackMixer'
+import { installInstrumentAwareNotePlayback } from './audio/playbackNoteCallbackPatch'
 import './App.css'
+
+/** OSMD GraphicalNote.setColor — SVG 백엔드에서 리렌더 없이 적용 */
+const DEFAULT_NOTE_COLOR = '#1a1a1a'
+const PLAYING_NOTE_COLOR = '#d32f2f'
+const NOTE_COLOR_OPTS = {
+  applyToNoteheads: true,
+  applyToStem: true,
+  applyToBeams: true,
+  applyToFlag: true,
+  applyToLedgerLines: true,
+} as const
+
+function isAllowedScoreFile(file: File): boolean {
+  const n = file.name.toLowerCase()
+  return n.endsWith('.xml') || n.endsWith('.musicxml') || n.endsWith('.mxl')
+}
+
+function resetPlaybackHighlights(highlightedRef: { current: GraphicalNote[] }) {
+  for (const gn of highlightedRef.current) {
+    try {
+      gn.setColor(DEFAULT_NOTE_COLOR, NOTE_COLOR_OPTS)
+    } catch {
+      /* 이전 악보의 그래픽 참조 등 */
+    }
+  }
+  highlightedRef.current = []
+}
+
+function highlightPlaybackNotes(
+  osmd: OpenSheetMusicDisplay,
+  notes: Note[],
+  highlightedRef: { current: GraphicalNote[] },
+  mixer: PlaybackMixer | null,
+) {
+  resetPlaybackHighlights(highlightedRef)
+  const rules = osmd.EngravingRules
+  for (const note of notes) {
+    if (!note || note.isRest()) continue
+    if (mixer) {
+      const idx = getInstrumentIndexFromNote(note)
+      if (mixer.shouldSilenceInstrument(idx)) continue
+      if (mixer.effectiveInstrumentGain(idx) <= 0) continue
+    }
+    const gn = rules.GNote(note)
+    if (gn) {
+      gn.setColor(PLAYING_NOTE_COLOR, NOTE_COLOR_OPTS)
+      highlightedRef.current.push(gn)
+    }
+  }
+}
+
+/** PlaybackEngine.countAndSetIterationSteps 와 동일한 커서 순회로 스텝 인덱스 계산 */
+function findPlaybackStepForNote(osmd: OpenSheetMusicDisplay, targetNote: Note): number | null {
+  const cursor = osmd.cursor
+  cursor.reset()
+  let step = 0
+  while (!cursor.Iterator.EndReached) {
+    const ves = cursor.Iterator.CurrentVoiceEntries
+    if (ves?.length) {
+      for (const ve of ves) {
+        if (ve.Notes?.some((n) => n === targetNote)) {
+          return step
+        }
+      }
+    }
+    cursor.next()
+    step++
+  }
+  return null
+}
+
+function seekPreviewAtCursor(
+  osmd: OpenSheetMusicDisplay,
+  highlightedRef: { current: GraphicalNote[] },
+  mixer: PlaybackMixer | null,
+) {
+  const notes = osmd.cursor.NotesUnderCursor()
+  const pitched = notes.filter((n) => !n.isRest())
+  if (pitched.length > 0) {
+    highlightPlaybackNotes(osmd, pitched, highlightedRef, mixer)
+  } else {
+    resetPlaybackHighlights(highlightedRef)
+  }
+}
 
 type PlaybackState = 'INIT' | 'PLAYING' | 'STOPPED' | 'PAUSED'
 
@@ -37,6 +125,7 @@ export default function App() {
   const osmdRef = useRef<OpenSheetMusicDisplay | null>(null)
   const engineRef = useRef<PlaybackEngine | null>(null)
   const mixerRef = useRef<PlaybackMixer | null>(null)
+  const playbackHighlightedRef = useRef<GraphicalNote[]>([])
 
   const [fileName, setFileName] = useState<string | null>(null)
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
@@ -50,11 +139,54 @@ export default function App() {
   const canPause = status === 'ready' && playbackState === 'PLAYING'
   const canStop = status === 'ready' && playbackState !== 'STOPPED' && playbackState !== 'INIT'
 
+  const loadFromFileRef = useRef<(file: File) => Promise<void>>(async () => {})
+  const fileDragHighlightRef = useRef(false)
+  const [fileDragActive, setFileDragActive] = useState(false)
+
   const tempoLabel = useMemo(() => `${Math.round(bpm)} BPM`, [bpm])
 
   useEffect(() => {
     return () => {
       void engineRef.current?.stop()
+    }
+  }, [])
+
+  useEffect(() => {
+    const hasFiles = (dt: DataTransfer | null) => dt?.types?.includes('Files') ?? false
+
+    const onDragOver = (e: DragEvent) => {
+      if (!hasFiles(e.dataTransfer)) return
+      e.preventDefault()
+      e.dataTransfer!.dropEffect = 'copy'
+      if (!fileDragHighlightRef.current) {
+        fileDragHighlightRef.current = true
+        setFileDragActive(true)
+      }
+    }
+
+    const clearDragUi = () => {
+      fileDragHighlightRef.current = false
+      setFileDragActive(false)
+    }
+
+    const onDrop = (e: DragEvent) => {
+      if (!hasFiles(e.dataTransfer)) return
+      e.preventDefault()
+      clearDragUi()
+      const file = Array.from(e.dataTransfer?.files ?? []).find(isAllowedScoreFile)
+      if (file) void loadFromFileRef.current(file)
+    }
+
+    const onDragEnd = () => clearDragUi()
+
+    window.addEventListener('dragover', onDragOver)
+    window.addEventListener('drop', onDrop)
+    window.addEventListener('dragend', onDragEnd)
+
+    return () => {
+      window.removeEventListener('dragover', onDragOver)
+      window.removeEventListener('drop', onDrop)
+      window.removeEventListener('dragend', onDragEnd)
     }
   }, [])
 
@@ -65,6 +197,8 @@ export default function App() {
       osmdRef.current = new OpenSheetMusicDisplay(scoreDivRef.current, {
         followCursor: true,
         autoResize: true,
+        darkMode: false,
+        defaultColorMusic: DEFAULT_NOTE_COLOR,
       })
     }
 
@@ -77,7 +211,25 @@ export default function App() {
         mixerRef.current.patchInstrumentPlayer(instrumentPlayer as any)
       }
 
-      setPlaybackState(engineRef.current.state as PlaybackState)
+      installInstrumentAwareNotePlayback(engineRef.current, () => mixerRef.current)
+
+      const engine = engineRef.current
+      engine.on(PlaybackEvent.ITERATION, (notes: Note[]) => {
+        const osmd = osmdRef.current
+        if (!osmd) return
+        if (!notes?.length) {
+          resetPlaybackHighlights(playbackHighlightedRef)
+          return
+        }
+        highlightPlaybackNotes(osmd, notes, playbackHighlightedRef, mixerRef.current)
+      })
+      engine.on(PlaybackEvent.STATE_CHANGE, (state: EnginePlaybackState) => {
+        if (state === EnginePlaybackState.STOPPED) {
+          resetPlaybackHighlights(playbackHighlightedRef)
+        }
+      })
+
+      setPlaybackState(engine.state as PlaybackState)
     }
   }
 
@@ -92,6 +244,7 @@ export default function App() {
       const engine = engineRef.current!
 
       if ((engine.state as PlaybackState) === 'PLAYING') await engine.stop()
+      resetPlaybackHighlights(playbackHighlightedRef)
 
       const extension = file.name.toLowerCase().split('.').pop()
       if (extension === 'mxl') {
@@ -115,6 +268,8 @@ export default function App() {
       setErrorText(e instanceof Error ? e.message : String(e))
     }
   }
+
+  loadFromFileRef.current = loadFromFile
 
   async function onPlay() {
     const engine = engineRef.current
@@ -144,25 +299,57 @@ export default function App() {
     engine.setBpm(Math.round(next))
   }
 
-  function updatePart(midiId: number, patch: Partial<Pick<PartControl, 'volume' | 'muted' | 'soloed'>>) {
+  function updatePart(instrumentIndex: number, patch: Partial<Pick<PartControl, 'volume' | 'muted' | 'soloed'>>) {
     const mixer = mixerRef.current
     if (!mixer) return
 
     setParts((prev) =>
       prev.map((p) => {
-        if (p.midiId !== midiId) return p
+        if (p.instrumentIndex !== instrumentIndex) return p
         const next = { ...p, ...patch }
-        mixer.setVolume(midiId, next.volume)
-        mixer.setMuted(midiId, next.muted)
-        mixer.setSoloed(midiId, next.soloed)
+        mixer.setVolume(instrumentIndex, next.volume)
+        mixer.setMuted(instrumentIndex, next.muted)
+        mixer.setSoloed(instrumentIndex, next.soloed)
         return next
       }),
     )
   }
 
+  function handleScoreSeek(event: MouseEvent<HTMLDivElement>) {
+    if (status !== 'ready') return
+
+    const osmd = osmdRef.current
+    const engine = engineRef.current
+    const gfx = osmd?.GraphicSheet
+    if (!osmd || !engine?.ready || !gfx) return
+
+    event.preventDefault()
+    event.stopPropagation()
+
+    const domPt = new PointF2D(event.clientX, event.clientY)
+    let svgPt: PointF2D
+    try {
+      svgPt = gfx.domToSvg(domPt)
+    } catch {
+      return
+    }
+    const osmdPt = gfx.svgToOsmd(svgPt)
+    const gNote = gfx.GetNearestNote(osmdPt, new PointF2D(8, 8))
+    if (!gNote) return
+
+    const targetNote = gNote.sourceNote
+
+    const step = findPlaybackStepForNote(osmd, targetNote)
+    if (step === null) return
+
+    engine.jumpToStep(step)
+    setPlaybackState(engine.state as PlaybackState)
+    seekPreviewAtCursor(osmd, playbackHighlightedRef, mixerRef.current)
+  }
+
   return (
     <IonApp>
-      <div className="app-shell">
+      <div className={fileDragActive ? 'app-shell app-shell--file-drag' : 'app-shell'}>
         <div className="sidebar">
           <IonHeader>
             <IonToolbar>
@@ -180,7 +367,9 @@ export default function App() {
               <IonItem lines="full">
                 <IonLabel>
                   <div className="label-title">MusicXML / MXL 업로드</div>
-                  <div className="label-subtitle">{fileName ?? '파일을 선택하세요 (.xml / .musicxml / .mxl)'}</div>
+                  <div className="label-subtitle">
+                    {fileName ?? '파일을 선택하거나 앱으로 드래그 (.xml / .musicxml / .mxl)'}
+                  </div>
                 </IonLabel>
                 <input
                   className="file-input"
@@ -245,7 +434,7 @@ export default function App() {
                 </IonItem>
               ) : (
                 parts.map((p) => (
-                  <IonItem key={`${p.instrumentIndex}-${p.midiId}`} className="part-item">
+                  <IonItem key={p.instrumentIndex} className="part-item">
                     <IonLabel>
                       <div className="label-title">{p.instrumentName}</div>
                       <div className="label-subtitle">MIDI #{p.midiId}</div>
@@ -259,19 +448,19 @@ export default function App() {
                           max={1}
                           step={0.01}
                           value={p.volume}
-                          onIonChange={(e) => updatePart(p.midiId, { volume: Number(e.detail.value) })}
+                          onIonChange={(e) => updatePart(p.instrumentIndex, { volume: Number(e.detail.value) })}
                         />
                       </div>
                       <div className="part-row toggles">
                         <IonToggle
                           checked={p.soloed}
-                          onIonChange={(e) => updatePart(p.midiId, { soloed: e.detail.checked })}
+                          onIonChange={(e) => updatePart(p.instrumentIndex, { soloed: e.detail.checked })}
                         >
                           Solo
                         </IonToggle>
                         <IonToggle
                           checked={p.muted}
-                          onIonChange={(e) => updatePart(p.midiId, { muted: e.detail.checked })}
+                          onIonChange={(e) => updatePart(p.instrumentIndex, { muted: e.detail.checked })}
                         >
                           Mute
                         </IonToggle>
@@ -284,13 +473,13 @@ export default function App() {
 
             <div className="footer-note">
               <div className="muted">
-                Follow-along 하이라이트는 OSMD 커서 기능을 사용합니다. (재생 시 현재 음표 위치가 따라갑니다.)
+                재생 중인 음표만 빨간색으로 강조됩니다. (커서 막대는 표시하지 않습니다.) 악보를 클릭하면 클릭한 음표·쉼표 위치부터 재생이 시작됩니다.
               </div>
             </div>
           </IonContent>
         </div>
 
-        <div className="main">
+        <div className="main score-panel">
           <IonHeader>
             <IonToolbar>
               <IonTitle>Score</IonTitle>
@@ -301,7 +490,12 @@ export default function App() {
           </IonHeader>
           <IonContent>
             <div className="score-surface">
-              <div ref={scoreDivRef} className="score-div" />
+              <div
+                ref={scoreDivRef}
+                className={status === 'ready' ? 'score-div score-div--seekable' : 'score-div'}
+                onClick={handleScoreSeek}
+                title={status === 'ready' ? '클릭하여 재생 시작 위치 설정' : undefined}
+              />
             </div>
           </IonContent>
         </div>

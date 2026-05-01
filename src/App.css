@@ -5,10 +5,18 @@
   flex-direction: column;
 }
 
+.app-shell--file-drag {
+  outline: 2px dashed rgba(109, 123, 255, 0.75);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
 .app-shell {
   height: 100%;
   display: flex;
   flex-direction: column;
+  gap: 10px;
+  padding: 10px;
 }
 
 .app-shell > .sidebar {
@@ -18,11 +26,6 @@
 .app-shell > .main {
   flex: 1 1 auto;
   min-height: 50vh;
-}
-
-.app-shell {
-  gap: 10px;
-  padding: 10px;
 }
 
 .app-shell > .sidebar,
@@ -35,6 +38,26 @@
   background: rgba(15, 22, 45, 0.35);
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.app-shell > .main.score-panel {
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  backdrop-filter: none;
+}
+
+.score-panel ion-toolbar {
+  --background: #f5f6fa;
+  --color: #1a1a1a;
+  --border-color: rgba(0, 0, 0, 0.08);
+}
+
+.score-panel ion-content {
+  --background: #ffffff;
+}
+
+.score-panel ion-badge {
+  --color: #1a1a1a;
 }
 
 .sidebar {
@@ -57,11 +80,21 @@
 .score-div {
   width: 100%;
   min-height: calc(100vh - 140px);
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.1);
   border-radius: 14px;
   overflow: auto;
   padding: 10px;
+}
+
+/* OSMD 커서는 세로 이미지 오버레이 — 재생 위치는 음표 색으로만 표시 */
+.score-div img[id^='cursorImg'] {
+  opacity: 0 !important;
+  pointer-events: none;
+}
+
+.score-div--seekable {
+  cursor: crosshair;
 }
 
 .file-input {
