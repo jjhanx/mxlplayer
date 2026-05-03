@@ -23,6 +23,7 @@ import { PlaybackEvent, PlaybackState as EnginePlaybackState } from 'osmd-audio-
 import { getInstrumentIndexFromNote } from './audio/instrumentIndexFromNote'
 import { PlaybackMixer } from './audio/playbackMixer'
 import { installInstrumentAwareNotePlayback } from './audio/playbackNoteCallbackPatch'
+import { scrollHighlightedNotesIntoView } from './audio/playbackScroll'
 import './App.css'
 
 /** OSMD GraphicalNote.setColor — SVG 백엔드에서 리렌더 없이 적용 */
@@ -195,7 +196,8 @@ export default function App() {
 
     if (!osmdRef.current) {
       osmdRef.current = new OpenSheetMusicDisplay(scoreDivRef.current, {
-        followCursor: true,
+        /** 커서 next() 한 줄 기준 스크롤은 다성부+피아노 묶음에서 한 스태프만 보일 수 있음 → 재생 시 직접 스크롤 */
+        followCursor: false,
         autoResize: true,
         darkMode: false,
         defaultColorMusic: DEFAULT_NOTE_COLOR,
@@ -222,6 +224,14 @@ export default function App() {
           return
         }
         highlightPlaybackNotes(osmd, notes, playbackHighlightedRef, mixerRef.current)
+        /** 색 변경 직후 레이아웃 반영 후, 실제 들리는/보이는 줄 전체가 score-div 안에 들어오도록 스크롤 */
+        requestAnimationFrame(() => {
+          scrollHighlightedNotesIntoView(
+            scoreDivRef.current,
+            playbackHighlightedRef.current,
+            osmd.Zoom ?? 1,
+          )
+        })
       })
       engine.on(PlaybackEvent.STATE_CHANGE, (state: EnginePlaybackState) => {
         if (state === EnginePlaybackState.STOPPED) {

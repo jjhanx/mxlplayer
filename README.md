@@ -15,7 +15,7 @@ MusicXML을 **OSMD(OpenSheetMusicDisplay)** 로 렌더링하고, **osmd-audio-pl
 - **재생**: `osmd-audio-player`, BPM 슬라이더로 템포 조절(재생 중 비활성)
 - **시작 위치**: 악보 클릭 시 해당 음표·쉼표 시점부터 재생
 - **파트별 믹싱**: **악기(파트) 인덱스** 기준 Volume / Solo / Mute (동일 MIDI GM 번호를 쓰는 파트도 UI·소리 분리)
-- **Follow-along**: 재생 중 **실제로 들리는 파트의 음표만** 빨간색 표시(OSMD 커서 막대는 숨김)
+- **Follow-along**: 재생 중 **실제로 들리는 파트의 음표만** 빨간색 표시(OSMD 커서 막대는 숨김). 여러 스태프가 같은 시각에 진행될 때 **한 덩어리가 보이도록** `followCursor` 대신 강조된 음표 SVG 범위를 합쳐 악보 패널(`.score-div`)을 스크롤합니다(`playbackScroll.ts`).
 
 ## 기술 참고
 
