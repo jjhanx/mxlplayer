@@ -1,15 +1,23 @@
 # mxlplayer
 
-MusicXML을 **OSMD(OpenSheetMusicDisplay)** 로 렌더링하고, **osmd-audio-player** 로 재생(커서 follow-along 하이라이트 포함)하는 웹/하이브리드 앱(MVP)입니다.
+MusicXML을 **OSMD(OpenSheetMusicDisplay)** 로 렌더링하고, **osmd-audio-player** 로 재생하는 웹 앱(MVP)입니다.
+
+저장소: [github.com/jjhanx/mxlplayer](https://github.com/jjhanx/mxlplayer)
 
 ## 기능 (MVP)
 
-- **파일 업로드**: `.xml` / `.musicxml` / `.mxl`
-- **악보 렌더링**: OpenSheetMusicDisplay (OSMD)
-- **재생 엔진**: `osmd-audio-player`
-- **템포 조절**: BPM 슬라이더
-- **파트별 제어**: Instrument(MIDI) 기준 **Volume + Solo + Mute**
-- **실시간 강조(Follow-along)**: OSMD 커서가 연주 위치를 따라감
+- **파일**: `.xml` / `.musicxml` / `.mxl` — 파일 선택 또는 **전체 창 Drag & Drop**
+- **악보**: OpenSheetMusicDisplay, 흰색 악보 패널
+- **재생**: `osmd-audio-player`, BPM 슬라이더로 템포 조절(재생 중 비활성)
+- **시작 위치**: 악보 클릭 시 해당 음표·쉼표 시점부터 재생
+- **파트별 믹싱**: **악기(파트) 인덱스** 기준 Volume / Solo / Mute (동일 MIDI GM 번호를 쓰는 파트도 UI·소리 분리)
+- **Follow-along**: 재생 중 **실제로 들리는 파트의 음표만** 빨간색 표시(OSMD 커서 막대는 숨김)
+
+## 기술 참고
+
+- **재생 템포 누적 가속 수정**: `osmd-audio-player` 0.7.0의 `PlaybackScheduler.reset()`이 잘못된 인자로 `clearInterval`을 호출해 `setInterval`이 누적되는 버그가 있어, `src/audio/patchPlaybackScheduler.ts`에서 프로토타입을 보정하고 `src/main.tsx`에서 엔진보다 먼저 로드합니다.
+- **파트별 게인**: `src/audio/playbackNoteCallbackPatch.ts`에서 OSMD `Note` 기준 악기 인덱스로 Solo/Mute/볼륨을 적용합니다.
+- **악기 인덱스**: `src/audio/instrumentIndexFromNote.ts` — `Instruments` 배열 참조 실패 시 `Instrument.Id` / `IdString`으로 매칭합니다.
 
 ## 실행 (웹)
 
@@ -17,6 +25,22 @@ MusicXML을 **OSMD(OpenSheetMusicDisplay)** 로 렌더링하고, **osmd-audio-pl
 npm install
 npm run dev
 ```
+
+## 프로덕션 빌드
+
+```bash
+npm run build
+```
+
+`dist/` 를 정적 호스팅(Nginx 등)에 올리면 됩니다.
+
+### Ubuntu + Nginx 예시
+
+- `dist/*` 를 예: `/var/www/mxlplayer/` 에 복사
+- `server_name` 에 도메인 지정, `root` 가 위 경로인지 확인
+- SPA 라우팅이 없어도 되면 `try_files $uri $uri/ /index.html` 은 선택
+- UFW·클라우드 보안 그룹에서 **TCP 80 / 443** 허용
+- `systemctl enable nginx` 로 부팅 시 자동 기동
 
 ## 하이브리드 앱 (Capacitor)
 
@@ -42,3 +66,6 @@ PowerShell에서 아래를 실행하면, 이 프로젝트를 `C:\dev\mxlplayer` 
 powershell -ExecutionPolicy Bypass -File .\scripts\win-local-setup.ps1
 ```
 
+## 문서 유지
+
+기능 변경·버그 수정 시 **이 README와 관련 구현 파일**을 함께 갱신하고, `main` 브랜치에 푸시하는 것을 권장합니다.
