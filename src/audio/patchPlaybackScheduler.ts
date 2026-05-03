@@ -13,8 +13,28 @@
  * 3) start() 에서 기존 interval 을 항상 지운 뒤 하나만 등록 → 같은 인스턴스 이중 인터벌 방지.
  *
  * (loadScore 시 이전 Scheduler 정리는 patchPlaybackEngine.ts)
+ *
+ * 4) loadNotes() 가 getFirstEmptyTick() 으로 다음 단계 시작 틱을 잡는데, 플레이스홀더·다성부·백업 처리에
+ *    따라 “빈 슬롯”이 앞쪽으로 당겨져 음표 간격이 점점 압축(체감 가속)될 수 있음.
+ *    OSMD VoiceEntry 의 절대 시각(ParentSourceStaffEntry.AbsoluteTimestamp)으로 틱을 직접 계산함.
  */
 import PlaybackScheduler from 'osmd-audio-player/dist/PlaybackScheduler.js'
+
+/** OSMD VoiceEntry — PlaybackScheduler 에 넘어오는 구조만 추출 */
+type OsmdVoiceEntry = {
+  IsGrace?: boolean
+  Notes: { Length: { RealValue: number } }[]
+  ParentSourceStaffEntry?: {
+    AbsoluteTimestamp: { RealValue: number }
+  }
+}
+
+type StepQueueOps = {
+  steps: { tick: number; notes: unknown[] }[]
+  sort: () => void
+  addNote: (tick: number, note: unknown) => void
+  createStep: (tick: number) => unknown
+}
 
 type SchedulerLike = {
   playing: boolean
@@ -37,12 +57,58 @@ type SchedulerLike = {
   scheduleIterationStep: () => void
 }
 
+type SchedulerTimeline = SchedulerLike & {
+  /** 첫 재생 포인트의 AbsoluteTimestamp.RealValue → 이후 틱은 (현재−원점)×denominator + lastTickOffset */
+  timelineOriginWhole?: number
+  lastTickOffset: number
+  tickDenominator: number
+  stepQueue: StepQueueOps
+}
+
 const lastScheduleAudioSampleMs = new WeakMap<object, number>()
+
+const builtinLoadNotes = PlaybackScheduler.prototype.loadNotes as (
+  this: SchedulerTimeline,
+  entries: OsmdVoiceEntry[],
+) => void
 
 const proto = PlaybackScheduler.prototype as unknown as {
   start: (this: SchedulerLike) => void
   scheduleIterationStep: (this: SchedulerLike) => void
-  reset: (this: SchedulerLike) => void
+  reset: (this: SchedulerTimeline) => void
+  loadNotes: (this: SchedulerTimeline, entries: OsmdVoiceEntry[]) => void
+}
+
+proto.loadNotes = function loadNotesAbsoluteTime(this: SchedulerTimeline, ves: OsmdVoiceEntry[]): void {
+  if (!ves?.length) return
+
+  /** 동시 진행 레이어는 동일 절대시각을 쓰지만, 배열 순서가 달라질 수 있어 최소값 사용 */
+  let stamp: number | undefined
+  for (const entry of ves) {
+    const t = entry.ParentSourceStaffEntry?.AbsoluteTimestamp?.RealValue
+    if (t === undefined || Number.isNaN(t)) continue
+    stamp = stamp === undefined ? t : Math.min(stamp, t)
+  }
+  if (stamp === undefined) {
+    builtinLoadNotes.call(this, ves)
+    return
+  }
+
+  if (this.timelineOriginWhole === undefined) {
+    this.timelineOriginWhole = stamp
+  }
+  const thisTick =
+    Math.round((stamp - this.timelineOriginWhole) * this.tickDenominator) + this.lastTickOffset
+
+  for (const entry of ves) {
+    if (entry.IsGrace) continue
+    for (const note of entry.Notes) {
+      const len = note.Length?.RealValue
+      if (len === undefined || Number.isNaN(len)) continue
+      this.stepQueue.addNote(thisTick, note)
+      this.stepQueue.createStep(thisTick + len * this.tickDenominator)
+    }
+  }
 }
 
 proto.start = function startPatched(this: SchedulerLike): void {
@@ -100,10 +166,11 @@ proto.scheduleIterationStep = function scheduleIterationStepPatched(
   for (const tick of this.scheduledTicks) {
     if (tick <= this.currentTick) this.scheduledTicks.delete(tick)
   }
-};
+}
 
-proto.reset = function resetPatched(this: SchedulerLike): void {
+proto.reset = function resetPatched(this: SchedulerTimeline): void {
   lastScheduleAudioSampleMs.delete(this as object)
+  this.timelineOriginWhole = undefined
   this.playing = false
   this.currentTick = 0
   this.currentTickTimestamp = 0
