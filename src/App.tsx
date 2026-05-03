@@ -23,7 +23,7 @@ import { PlaybackEvent, PlaybackState as EnginePlaybackState } from 'osmd-audio-
 import { getInstrumentIndexFromNote } from './audio/instrumentIndexFromNote'
 import { PlaybackMixer } from './audio/playbackMixer'
 import { installInstrumentAwareNotePlayback } from './audio/playbackNoteCallbackPatch'
-import { scrollHighlightedNotesIntoView } from './audio/playbackScroll'
+import { scrollHighlightedNotesIntoView, PLAYBACK_SCROLL_KEEP_VISIBLE_MS } from './audio/playbackScroll'
 import './App.css'
 
 /** OSMD GraphicalNote.setColor — SVG 백엔드에서 리렌더 없이 적용 */
@@ -152,6 +152,19 @@ export default function App() {
     }
   }, [])
 
+  /** 재생 중 수동 스크롤 후에도 강조 구간이 패널 밖으로 나가면 즉시 다시 스크롤 */
+  useEffect(() => {
+    if (playbackState !== 'PLAYING' || status !== 'ready') return undefined
+    const timer = window.setInterval(() => {
+      const osmd = osmdRef.current
+      if (!osmd) return
+      const gn = playbackHighlightedRef.current
+      if (gn.length === 0) return
+      scrollHighlightedNotesIntoView(scoreDivRef.current, gn, osmd.Zoom ?? 1)
+    }, PLAYBACK_SCROLL_KEEP_VISIBLE_MS)
+    return () => clearInterval(timer)
+  }, [playbackState, status])
+
   useEffect(() => {
     const hasFiles = (dt: DataTransfer | null) => dt?.types?.includes('Files') ?? false
 
@@ -224,13 +237,15 @@ export default function App() {
           return
         }
         highlightPlaybackNotes(osmd, notes, playbackHighlightedRef, mixerRef.current)
-        /** 색 변경 직후 레이아웃 반영 후, 실제 들리는/보이는 줄 전체가 score-div 안에 들어오도록 스크롤 */
+        /** 색·SVG 반영 다음 프레임에 스크롤 (한 번 더 지연하면 레이아웃 후 좌표가 안정적) */
         requestAnimationFrame(() => {
-          scrollHighlightedNotesIntoView(
-            scoreDivRef.current,
-            playbackHighlightedRef.current,
-            osmd.Zoom ?? 1,
-          )
+          requestAnimationFrame(() => {
+            scrollHighlightedNotesIntoView(
+              scoreDivRef.current,
+              playbackHighlightedRef.current,
+              osmd.Zoom ?? 1,
+            )
+          })
         })
       })
       engine.on(PlaybackEvent.STATE_CHANGE, (state: EnginePlaybackState) => {
