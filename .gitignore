@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# macOS zip 추출 시 생기는 메타파일(악보 저장소에 불필요)
+**/__MACOSX/

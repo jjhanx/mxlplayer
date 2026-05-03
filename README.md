@@ -4,6 +4,10 @@ MusicXML을 **OSMD(OpenSheetMusicDisplay)** 로 렌더링하고, **osmd-audio-pl
 
 저장소: [github.com/jjhanx/mxlplayer](https://github.com/jjhanx/mxlplayer)
 
+## 테스트용 악보
+
+`MusicXML Files/` 에 샘플·로컬 테스트용 `.mxl` / `.musicxml`(및 `xmlsamples/` 참고용 PDF·이미지 등)이 포함되어 있습니다. 앱에서 열거나 Drag & Drop 으로 시험하면 됩니다.
+
 ## 기능 (MVP)
 
 - **파일**: `.xml` / `.musicxml` / `.mxl` — 파일 선택 또는 **전체 창 Drag & Drop**
