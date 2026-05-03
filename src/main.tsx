@@ -1,7 +1,8 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-/** PlaybackEngine 사용 전 PlaybackScheduler 타이머 버그 패치 */
+/** PlaybackEngine 사용 전 osmd-audio-player 타이머·스케줄러 패치 */
 import './audio/patchPlaybackScheduler'
+import './audio/patchPlaybackEngine'
 import App from './App.tsx'
 import { setupIonicReact } from '@ionic/react'
 

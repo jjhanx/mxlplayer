@@ -19,9 +19,11 @@ MusicXML을 **OSMD(OpenSheetMusicDisplay)** 로 렌더링하고, **osmd-audio-pl
 
 ## 기술 참고
 
-- **재생 스케줄러 패치** (`src/audio/patchPlaybackScheduler.ts`, `main.tsx`에서 PlaybackEngine보다 먼저 import):
-  - **템포 누적 가속**: 라이브러리 0.7.0의 `reset()`이 잘못된 인자로 `clearInterval`을 호출해 `setInterval` 핸들이 남는 문제 → `schedulerIntervalHandle`로 정리하도록 `reset` 교체.
-  - **재생 멈춤·음표 도약·순간 버스트**: 브라우저가 탭을 백그라운드로 두거나 `setInterval`이 지연되면 `calculatedTick`이 한 번에 크게 점프하고, 뒤처진 스텝의 `timeToTick`이 모두 0으로 잡혀 여러 음이 동시에 재생될 수 있음 → 매 주기 `currentTick` 증가량을 `경과 오디오 시간`(및 `schedulePeriod`/`scheduleInterval` 기준 상한)으로 제한하고, `reset` 시 내부 샘플 타임스탬프(`WeakMap`)도 초기화.
+- **재생 스케줄러·엔진 패치** (`main.tsx`에서 App 이전에 `patchPlaybackScheduler` → `patchPlaybackEngine` 순으로 import):
+  - **템포 누적 가속(1)**: `PlaybackScheduler.reset()`이 잘못된 인자로 `clearInterval`을 호출해 핸들이 남는 문제 → `schedulerIntervalHandle`로 정리.
+  - **템포 누적 가속(2)**: `PlaybackEngine.loadScore()`가 교체되는 **기존** `PlaybackScheduler`에 `reset()`을 호출하지 않아, 예전 인스턴스의 `setInterval`이 계속 실행될 수 있음 → `patchPlaybackEngine.ts`에서 `loadScore` 앞단에 이전 스케줄러 `reset()` 추가.
+  - **`start()` 이중 타이머 방지**: `PlaybackScheduler.start()`가 기존 인터벌을 항상 지운 뒤 하나만 등록하도록 교체 (`patchPlaybackScheduler.ts`).
+  - **재생 멈춤·음표 도약·순간 버스트**: 백그라운드 탭 등으로 `setInterval`이 지연될 때 `calculatedTick` 점프로 `timeToTick`이 한꺼번에 0으로 몰림 → 매 주기 `currentTick` 증가량을 상한하고, `reset` 시 `WeakMap` 샘플도 초기화.
 
 - **파트별 게인**: `src/audio/playbackNoteCallbackPatch.ts`에서 OSMD `Note` 기준 악기 인덱스로 Solo/Mute/볼륨을 적용합니다.
 - **악기 인덱스**: `src/audio/instrumentIndexFromNote.ts` — `Instruments` 배열 참조 실패 시 `Instrument.Id` / `IdString`으로 매칭합니다.

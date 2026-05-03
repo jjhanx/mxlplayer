@@ -4,9 +4,12 @@
  * 1) reset()이 clearInterval(this.scheduleInterval) 로 잘못 호출됨 → 타이머가 안 지워져
  *    setInterval 이 누적 → 템포가 점점 빨라짐. schedulerIntervalHandle 로 정리.
  *
- * 2) 브라우저가 탭을 백그라운드로 두거나 setInterval 이 밀리면, 한 번에 currentTick 이 크게 앞당겨져
- *    과거 스텝의 timeToTick 이 전부 0이 되어 음표가 한꺼번에 터지고 커서/스텝이 도약함.
- *    각 주기당 재생 시간 경과에 비례해 틱 점프를 상한 처리한다.
+ * 2) 브라우저가 탭을 백그라운드로 두거나 setInterval 이 밀리면 currentTick 이 크게 점프해
+ *    timeToTick 이 0으로 몰리는 문제 → 틱 증가량 상한 + reset 시 WeakMap 초기화.
+ *
+ * 3) start() 에서 기존 interval 을 항상 지운 뒤 하나만 등록 → 같은 인스턴스 이중 인터벌 방지.
+ *
+ * (loadScore 시 이전 Scheduler 정리는 patchPlaybackEngine.ts)
  */
 import PlaybackScheduler from 'osmd-audio-player/dist/PlaybackScheduler.js'
 
@@ -15,24 +18,43 @@ type SchedulerLike = {
   currentTick: number
   currentTickTimestamp: number
   stepQueueIndex: number
-  schedulerIntervalHandle: ReturnType<typeof setInterval> | null
+  audioContextStartTime: number
+  schedulerIntervalHandle: number | ReturnType<typeof window.setInterval> | null
   schedulePeriod: number
   scheduleInterval: number
   wholeNoteLength: number
   tickDenominator: number
   audioContextTime: number
   calculatedTick: number
-  stepQueue: { steps: { tick: number; notes: unknown[] }[] }
+  audioContext: { currentTime: number } | null
+  stepQueue: { steps: { tick: number; notes: unknown[] }[]; sort: () => void }
   scheduledTicks: Set<number>
   noteSchedulingCallback: (delaySeconds: number, notes: unknown[]) => void
   nextTickAvailableAndWithinSchedulePeriod: (nextTick: number | undefined) => boolean
+  scheduleIterationStep: () => void
 }
 
 const lastScheduleAudioSampleMs = new WeakMap<object, number>()
 
 const proto = PlaybackScheduler.prototype as unknown as {
+  start: (this: SchedulerLike) => void
   scheduleIterationStep: (this: SchedulerLike) => void
   reset: (this: SchedulerLike) => void
+}
+
+proto.start = function startPatched(this: SchedulerLike): void {
+  this.playing = true
+  this.stepQueue.sort()
+  if (this.schedulerIntervalHandle != null) {
+    window.clearInterval(this.schedulerIntervalHandle)
+    this.schedulerIntervalHandle = null
+  }
+  this.audioContextStartTime = this.audioContext!.currentTime
+  this.currentTickTimestamp = this.audioContextTime
+  this.schedulerIntervalHandle = window.setInterval(
+    () => this.scheduleIterationStep(),
+    this.scheduleInterval,
+  )
 }
 
 proto.scheduleIterationStep = function scheduleIterationStepPatched(
