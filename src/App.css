@@ -146,6 +146,8 @@
 
 /** 인쇄 준비 중: 포탈 호스트를 최상단에 올려 OSMD 가 그리는 동안 가려지지 않게 함 */
 body.printing-score .score-print-host {
+  opacity: 1 !important;
+  visibility: visible !important;
   z-index: 2147483646;
 }
 

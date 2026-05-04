@@ -147,6 +147,48 @@ function removeDynamicPrintPageCss() {
   document.getElementById(DYNAMIC_PRINT_PAGE_STYLE_ID)?.remove()
 }
 
+/**
+ * Electron/일부 Chromium 계열에서 `afterprint` 가 미리보기가 열리기 직전에도 한 번 나가,
+ * 곧바로 DOM 을 비우면 **빈 장**만 인쇄됨. `matchMedia('print')` 가 false 로 돌아온 뒤에 정리한다.
+ */
+function attachPrintSessionEndOnce(onEnd: () => void): void {
+  const mq = window.matchMedia('print')
+  const mqCompat = mq as MediaQueryList & {
+    addListener?: (cb: () => void) => void
+    removeListener?: (cb: () => void) => void
+  }
+
+  let done = false
+  const finish = () => {
+    if (done) return
+    done = true
+    if (typeof mq.removeEventListener === 'function') mq.removeEventListener('change', onMqChange)
+    else mqCompat.removeListener?.(onMqLegacy)
+    window.setTimeout(onEnd, 480)
+  }
+
+  const onMqChange = (ev: MediaQueryListEvent) => {
+    if (!ev.matches) finish()
+  }
+  const onMqLegacy = () => {
+    if (!mq.matches) finish()
+  }
+
+  if (typeof mq.addEventListener === 'function') mq.addEventListener('change', onMqChange)
+  else mqCompat.addListener?.(onMqLegacy)
+
+  /** afterprint 만 믿지 않되, 미리보기가 열린 직후에는 보통 `print` 미디어가 아직 true → 여기서는 무시 */
+  window.addEventListener(
+    'afterprint',
+    () => {
+      window.setTimeout(() => {
+        if (!window.matchMedia('print').matches) finish()
+      }, 700)
+    },
+    { once: true },
+  )
+}
+
 function resetPlaybackHighlights(highlightedRef: { current: GraphicalNote[] }) {
   for (const gn of highlightedRef.current) {
     try {
@@ -550,13 +592,14 @@ export default function App() {
 
       const safetyFallback = window.setTimeout(teardown, 120_000)
 
-      const onAfterPrint = () => {
+      const endSession = () => {
         window.clearTimeout(safetyFallback)
         teardown()
       }
 
-      /** 인쇄 미리보기·대화 상자 종료 후 — 짧은 setTimeout teardown 은 미리 문서가 비워 백지가 될 수 있음 */
-      window.addEventListener('afterprint', onAfterPrint, { once: true })
+      window.addEventListener('beforeprint', () => void host.offsetHeight, { once: true })
+
+      attachPrintSessionEndOnce(endSession)
       window.print()
     } catch (e) {
       setErrorText(e instanceof Error ? e.message : String(e))

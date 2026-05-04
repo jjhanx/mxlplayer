@@ -36,11 +36,16 @@ export function setDrawMeasureIndexWindow(
 }
 
 function collectOsmdPageNodes(mount: HTMLElement): HTMLElement[] {
+  const byPage = [...mount.querySelectorAll<HTMLElement>('[id^="osmdCanvasPage"]')]
+  if (byPage.length > 0) return byPage
+
+  const svg = mount.querySelector<HTMLElement>('[id^="osmdSvgPage"]')
+  if (svg?.parentElement) return [svg.parentElement]
+
   const direct = [...mount.children].filter(
     (el): el is HTMLElement => el instanceof HTMLElement && /^osmdCanvasPage\d*$/.test(el.id),
   )
-  if (direct.length) return direct
-  return [...mount.querySelectorAll<HTMLElement>("div[id^='osmdCanvasPage']")]
+  return direct
 }
 
 function sortOsmdPagesByNumber(pages: HTMLElement[]): HTMLElement[] {
@@ -106,6 +111,15 @@ export function paginatePrintedScoreSlices(
     void mount.offsetWidth
     resetDrawMeasureIndexWindow(osmd)
     setDrawMeasureIndexWindow(osmd, sheet, start, end)
+    osmd.updateGraphic()
+    osmd.render()
+    moveRenderedOsmdPages(mount, stack, sheetSeq)
+  }
+
+  if (stack.childElementCount === 0) {
+    resetDrawMeasureIndexWindow(osmd)
+    mount.replaceChildren()
+    void mount.offsetWidth
     osmd.updateGraphic()
     osmd.render()
     moveRenderedOsmdPages(mount, stack, sheetSeq)
