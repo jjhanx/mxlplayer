@@ -20,7 +20,7 @@ MusicXML을 **OSMD(OpenSheetMusicDisplay)** 로 렌더링하고, **osmd-audio-pl
 - **인쇄**
   - **`document.body` 포탈의 `.score-print-host`** 에 **별도 OSMD**를 만들고, 같은 원본(`mxl`/문자열)을 **다시 로드**합니다(`App.tsx`). Ion `ion-content`·`.main` 의 `overflow`/스크롤 때문에 **화면 `score-div`에 직접 인쇄하면** 백지·미리보기 하단 찌꺼기가 잘 나와, 화면 인스턴스를 쓰지 않습니다.
   - 화면이 **가로 한 줄**이든 **세로**이든 인쇄는 항상 **`renderSingleHorizontalStaffline: false`** + `setCustomPageFormat`(인쇄 영역 mm) + `PRINT_OSMD_ZOOM` 등(`configurePrintOsmd.ts`). 인쇄 시 `body.printing-score` + `@media print` 로 **`#root`/`.app-shell` 숨김** 후 포탈 호스트만 종이로 나갑니다(`App.css`).
-  - **다페이지**: `measureSlicePagination.ts` — 첫 렌더 뒤 **`#osmdCanvasPage` 용지 블록이 DOM 에 2개 이상**이면 OSMD 분할을 신뢰하고 그대로 스택에 옮깁니다. **1블록뿐이면**(내부 `MusicPages` 수와 무관) **마디 블록(`PRINT_MEASURES_PER_SLICE`, 기본 4)으로 재렌더**해 여러 용지로 이어지게 합니다.
+  - **다페이지**: `measureSlicePagination.ts` — 마디 블록(`PRINT_MEASURES_PER_SLICE`, 기본 **2**)마다 **`updateGraphic`/`render`** 하여 스택에 쌓고, 슬라이스마다 OSMD 가 다시 `osmdCanvasPage1` 같은 id 를 쓰므로 **`.print-score-sheet` 로 한 장씩 감싸** DOM id 중복·인쇄 엔진의 한 페이지 스케일을 피함. `@media print` 에서 래퍼마다 **`page-break-after`**(`App.css`).
   - **`@page` 여백**은 `PRINT_PAGE_MARGIN_MM` 과 OSMD에 넘기는 mm와 동일. 브라우저 **배율 100%** 권장.
 
 ## 기술 참고

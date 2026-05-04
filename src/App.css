@@ -194,19 +194,26 @@ body.printing-score .score-print-host {
   }
 
   /**
-   * OSMD: 페이지마다 `div#osmdCanvasPage{n}` 안에 svg(`#osmdSvgPage{n}`).
+   * OSMD 페이지 블록을 `.print-score-sheet` 로 감싸 **고유 레벨**(중복된 `osmdCanvasPage1` id)에서 벗어나고,
+   * `break-inside: avoid` 가 한 블록을 한 종이 박스로 줄여 버리는 브라우저 동작을 피함.
    */
-  body.printing-score .score-print-host > div[id^='osmdCanvasPage'],
-  body.printing-score .score-print-host .score-print-page-stack > div[id^='osmdCanvasPage'] {
-    break-after: page;
-    page-break-after: always;
-    break-inside: avoid;
-    page-break-inside: avoid;
+  body.printing-score .score-print-page-stack {
     display: block;
+    width: 100%;
   }
 
-  body.printing-score .score-print-host > div[id^='osmdCanvasPage']:last-of-type,
-  body.printing-score .score-print-host .score-print-page-stack > div[id^='osmdCanvasPage']:last-of-type {
+  body.printing-score .score-print-page-stack > .print-score-sheet {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    break-after: page;
+    page-break-after: always;
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+
+  body.printing-score .score-print-page-stack > .print-score-sheet:last-child {
     break-after: auto;
     page-break-after: auto;
   }

@@ -1,10 +1,9 @@
 import type { MusicSheet, OpenSheetMusicDisplay } from 'opensheetmusicdisplay'
 
 /**
- * 소스 마디 색인(0…) 블록 단위 분할 크기 — OSMD가 모든 시스템을 한 Graphical 페이지에 세로로 쌓는 경우가 많아,
- * 브라우저 인쇄 한 장 분량을 넘지 않도록 **작게** 둠(블록 많을수록 `window.print` 다장으로 이어지기 유리).
+ * 소스 마디 색인(0…) 블록 단위 분할 — 작을수록 인쇄 장 수가 늘어나기 쉬움(한 블록이 한 장을 넘기면 브라우저가 한 장에 스케일하는 문제 완화).
  */
-export const PRINT_MEASURES_PER_SLICE = 4
+export const PRINT_MEASURES_PER_SLICE = 2
 
 /**
  * ImplicitMeasure 처리 분기(MinMeasureToDrawNumber 등)가 색인을 덮어쓸 수 있어,
@@ -36,25 +35,40 @@ export function setDrawMeasureIndexWindow(
   r.MaxMeasureToDrawNumber = 0
 }
 
-export function moveRenderedOsmdPages(mount: HTMLElement, stack: HTMLElement): void {
-  const pages = mount.querySelectorAll<HTMLElement>(":scope > div[id^='osmdCanvasPage']")
-  for (const node of [...pages]) {
-    stack.appendChild(node)
+function collectOsmdPageNodes(mount: HTMLElement): HTMLElement[] {
+  const direct = [...mount.children].filter(
+    (el): el is HTMLElement => el instanceof HTMLElement && /^osmdCanvasPage\d*$/.test(el.id),
+  )
+  if (direct.length) return direct
+  return [...mount.querySelectorAll<HTMLElement>("div[id^='osmdCanvasPage']")]
+}
+
+function sortOsmdPagesByNumber(pages: HTMLElement[]): HTMLElement[] {
+  return [...pages].sort((a, b) => {
+    const na = parseInt(a.id.replace(/\D/g, ''), 10) || 0
+    const nb = parseInt(b.id.replace(/\D/g, ''), 10) || 0
+    return na - nb
+  })
+}
+
+/**
+ * OSMD 는 마디 슬라이스마다 다시 `osmdCanvasPage1` 을 그리는 경우가 많아 **스택에 동일 id 가 중복**될 수 있음.
+ * 인쇄용 래퍼로 감싸 페이지 나눔이 안정적으로 동작하게 함.
+ */
+function moveRenderedOsmdPages(
+  mount: HTMLElement,
+  stack: HTMLElement,
+  sheetSeq: { value: number },
+): void {
+  const pages = sortOsmdPagesByNumber(collectOsmdPageNodes(mount))
+  for (const node of pages) {
+    const wrap = document.createElement('div')
+    wrap.className = 'print-score-sheet'
+    wrap.dataset.printSheet = String(sheetSeq.value++)
+    wrap.appendChild(node)
+    stack.appendChild(wrap)
   }
   mount.replaceChildren()
-}
-
-export function graphicalMusicPagesCount(osmd: OpenSheetMusicDisplay): number {
-  try {
-    return osmd.GraphicSheet?.MusicPages?.length ?? 0
-  } catch {
-    return 0
-  }
-}
-
-/** OSMD 가 실제로 mount 직속에 깐 용지 래퍼 수 — 내부 `MusicPages` 수와 불일치할 때가 있음(한 div 안에 장 다수 등). */
-function domOsmdCanvasPageCount(mount: HTMLElement): number {
-  return mount.querySelectorAll(":scope > div[id^='osmdCanvasPage']").length
 }
 
 function resolvePageStackSibling(mount: HTMLElement): HTMLElement | null {
@@ -65,8 +79,8 @@ function resolvePageStackSibling(mount: HTMLElement): HTMLElement | null {
 
 /**
  * 형제 순서: `score-print-host` 안에 **`score-print-page-stack` 다음 `score-print-mount`(OSMD 에 넘긴 렌더 루트)**.
- * 먼저 전체 마디로 렌더 — OSMD가 여러 Graphical 페이지면 그 div 만 스택으로 옮김.
- * OSMD가 통째 레이아웃 시 한 Graphical 페이지 안에 길게 쌓는 경우 마디 블록별로 재렌더해 `#osmdCanvasPage` 를 여러 개 만들고 순서대로 스택에 둠.
+ * OSMD 가 한 Graphical 페이지에 세로로 모두 쌓으면 DOM 은 `osmdCanvasPage1` 하나뿐일 수 있음.
+ * **항상** 소스 마디 블록으로 나누어 렌더할 때마다 스택에 쌓되, 한 슬라이스마다 id 가 `...Page1` 으로 겹치므로 **`.print-score-sheet` 로 감쌈**.
  */
 export function paginatePrintedScoreSlices(
   osmd: OpenSheetMusicDisplay,
@@ -81,28 +95,9 @@ export function paginatePrintedScoreSlices(
   const stack = resolvePageStackSibling(mount)
   if (!stack) return
 
+  const sheetSeq = { value: 0 }
+
   stack.replaceChildren()
-  mount.replaceChildren()
-
-  void mount.offsetWidth
-  resetDrawMeasureIndexWindow(osmd)
-  osmd.updateGraphic()
-  osmd.render()
-
-  /** DOM 에 용지 래퍼가 둘 이상이면 OSMD 분할 신뢰 — 마디 슬라이스 생략. `MusicPages` 만 보고 분기하면 한 div 장문 SVG 인쇄 1장 이슈가 남음 */
-  const domPages = domOsmdCanvasPageCount(mount)
-  if (domPages >= 2) {
-    moveRenderedOsmdPages(mount, stack)
-    resetDrawMeasureIndexWindow(osmd)
-    return
-  }
-
-  /** DOM 이 단일 블록 뿐이면 마디 블록별 재렌더로 여러 용지 div 생성 */
-
-  /**
-   * Graphical 페이지가 1장뿐이면 소스 마디 수와 무관하게 **블록별로 재렌더**해야 인쇄 시 여러 `div#osmdCanvasPage`(→ 용지)로 이어지는 경우가 많음.
-   * (예: 마디 수 ≤ 블록 크기였다고 통째만 그리면 한 장짜리 긴 SVG가 될 수 있음.)
-   */
   mount.replaceChildren()
 
   const chunk = Math.max(1, measureChunkSize)
@@ -113,7 +108,7 @@ export function paginatePrintedScoreSlices(
     setDrawMeasureIndexWindow(osmd, sheet, start, end)
     osmd.updateGraphic()
     osmd.render()
-    moveRenderedOsmdPages(mount, stack)
+    moveRenderedOsmdPages(mount, stack, sheetSeq)
   }
 
   resetDrawMeasureIndexWindow(osmd)
