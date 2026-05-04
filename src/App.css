@@ -144,6 +144,8 @@
   box-sizing: border-box;
 }
 
+/** 인쇄 준비 중(스크린): 악보만 앱 위로 — 인쇄 시에는 아래 @media print 가 z-index 정리 */
+body.printing-score .score-print-host {
   z-index: 2147483646;
 }
 
@@ -157,6 +159,14 @@
   body.printing-score ion-app {
     height: auto !important;
     min-height: 0 !important;
+  }
+
+  /**
+   * 악보는 #root 밖(body 직계)에 포탈로 붙임. 인쇄 시 플레이어 UI(#root·IonApp 전체)를 완전히 끄고
+   * 오직 .score-print-host 만 남김(파서 깨짐· Ionic 스타일 때문에 .app-shell 만 숨길 때 플레이어가 남는 경우 방지).
+   */
+  body.printing-score #root {
+    display: none !important;
   }
 
   body.printing-score .app-shell {

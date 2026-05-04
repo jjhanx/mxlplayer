@@ -29,7 +29,7 @@ MusicXML을 **OSMD(OpenSheetMusicDisplay)** 로 렌더링하고, **osmd-audio-pl
 
 - **파트별 게인**: `src/audio/playbackNoteCallbackPatch.ts`에서 OSMD `Note` 기준 악기 인덱스로 Solo/Mute/볼륨을 적용합니다.
 - **재생 따라가기·스크롤**: `src/audio/playbackScroll.ts` — `scrollHighlightedNotesIntoView(..., layout)` 네 번째 인자로 `'default'(세로)` / `'horizontal-strip'(가로+필요 시 세로 보정)'` 를 둡니다. 가로 줄 모드에서는 **시간 따라가기는 좌우**가 주이되, 피아노 등 **위·아래 스태프가 뷰 밖이면 세로 보정도** 합니다. `App.tsx`의 재생 폴링과 `PlaybackEvent.ITERATION` 핸들러는 **최신 레이아웃(ref)** 과 일치하게 호출합니다.
-- **가로 줄·인쇄 전환**: `src/App.tsx` — 화면용 OSMD는 `renderSingleHorizontalStaffline` 과 기본 페이지(엔들리스) 중 하나입니다. 인쇄용 DOM은 **`score-print-page-stack`(누적 페이지) + `score-print-mount`(렌더 후 비움)`** 을 `score-print-host` 안에 두고, OSMD는 **`printMount`** 에 붙입니다. `createPortal(..., document.body)` 로 호스트를 루트에 두며, `sizePrintHostToContentBoxMm`·`paginatePrintedScoreSlices`( `src/print/measureSlicePagination.ts` ) 후 `window.print()` 합니다.
+- **가로 줄·인쇄 전환**: `src/App.tsx` — 화면용 OSMD는 `renderSingleHorizontalStaffline` 과 기본 페이지(엔들리스) 중 하나입니다. 인쇄용 DOM은 **`score-print-page-stack`(누적 페이지) + `score-print-mount`(렌더 후 비움)`** 을 `score-print-host` 안에 두고, OSMD는 **`printMount`** 에 붙입니다. `createPortal(..., document.body)` 로 호스트를 루트에 두며, `sizePrintHostToContentBoxMm`·`paginatePrintedScoreSlices`( `src/print/measureSlicePagination.ts` ) 후 `window.print()` 합니다. **`@media print` + `body.printing-score` 일 때 `#root { display: none }`** 으로 앱(플레이어) UI를 끄고, 포탈로 붙인 `.score-print-host` 만 인쇄되게 함(`App.css`).
 - **악기 인덱스**: `src/audio/instrumentIndexFromNote.ts` — `Instruments` 배열 참조 실패 시 `Instrument.Id` / `IdString`으로 매칭합니다.
 
 ## 실행 (웹)
