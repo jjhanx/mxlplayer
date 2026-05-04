@@ -155,7 +155,8 @@ body.printing-score .score-print-host {
     inset: auto !important;
     left: 0 !important;
     top: 0 !important;
-    width: auto !important;
+    width: 100% !important;
+    max-width: none !important;
     min-height: unset !important;
     height: auto !important;
     opacity: 1 !important;
@@ -164,11 +165,28 @@ body.printing-score .score-print-host {
     z-index: 1 !important;
     overflow: visible !important;
     background: #ffffff !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  /**
+   * OSMD SVG: 페이지별로 호스트 바로 아래 형제 svg 가 생기는 것이 일반적.
+   */
+  body.printing-score .score-print-host > svg {
+    break-after: page;
+    page-break-after: always;
+    display: block;
+  }
+
+  body.printing-score .score-print-host > svg:last-of-type {
+    break-after: auto;
+    page-break-after: auto;
   }
 
   body.printing-score .score-print-host svg {
-    max-width: none !important;
+    max-width: 100% !important;
     height: auto !important;
+    overflow: visible !important;
   }
 }
 

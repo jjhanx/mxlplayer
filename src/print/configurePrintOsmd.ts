@@ -3,65 +3,91 @@ import { OpenSheetMusicDisplay } from 'opensheetmusicdisplay'
 /** 브라우저 CSS 픽셀 ≒ 96 DPI 기준 mm 환산 */
 export const PRINT_CSS_MM_TO_PX = 96 / 25.4
 
-export function pxFromPrintMm(mm: number, floorPx = 400): number {
-  return Math.max(floorPx, Math.round(mm * PRINT_CSS_MM_TO_PX))
-}
+/** `@page` 및 OSMD `setCustomPageFormat` 에 동일하게 사용 — 용지 여백과 레이아웝 폭 불일치 시 오른쪽 세로줄이 잘림 */
+export const PRINT_PAGE_MARGIN_MM = 12
+
+/** 브라우저 인쇄 배율 조정 대신 OSMD 전역 배율로 밀도 확보(미리보기 깨짐 완화 목표) */
+export const PRINT_OSMD_ZOOM = 0.93
 
 export type OsmdPagedFormatId = 'A4_P' | 'A4_L' | 'Letter_P' | 'Letter_L'
 
-/**
- * 페이지 포맷에 맞춰 출력용 컨테이너 크기를 잡음.
- * 페이지보다 좁게 두면 마지막 마디 줄·종단 세로 마디선이 도려 나가 보일 수 있다.
- */
-export function sizeDomHostLikeOsmdPrintPage(formatId: OsmdPagedFormatId, host: HTMLElement): void {
+export function pxFromPrintMm(mm: number, floorPx = 320): number {
+  return Math.max(floorPx, Math.round(mm * PRINT_CSS_MM_TO_PX))
+}
+
+function pageFormatForId(formatId: OsmdPagedFormatId): { width: number; height: number } {
   const standards = OpenSheetMusicDisplay.PageFormatStandards as
     | Record<string, { width: number; height: number } | undefined>
     | undefined
 
-  const pf =
+  return (
     standards?.[formatId] ??
     (OpenSheetMusicDisplay as unknown as { StringToPageFormat: (id: string) => { width: number; height: number } })
       .StringToPageFormat(formatId)
+  )
+}
 
-  const wMm = pf?.width ?? 210
-  const hMm = pf?.height ?? 297
-
-  const wPx = pxFromPrintMm(wMm)
-  const hPx = pxFromPrintMm(hMm)
-
-  host.style.boxSizing = 'border-box'
-  host.style.overflow = 'visible'
-  /** OSMD autoResize: false 에서 페이지 가로 근처를 제공 → 시스템 폭 계산 일치 · 오른쪽 잘림 완화 */
-  host.style.width = `${wPx}px`
-  host.style.minWidth = `${wPx}px`
-  host.style.minHeight = `${hPx}px`
+/** 용지 전체(mm) */
+export function getPaperSizeMm(formatId: OsmdPagedFormatId): { widthMm: number; heightMm: number } {
+  const pf = pageFormatForId(formatId)
+  return { widthMm: pf.width, heightMm: pf.height }
 }
 
 /**
- * 가능한 한 한 시스템에 마디가 더 들어오도록 간격 소폭 압축(단순 점진 — 복잡 악보는 여전히 4미만일 수 있음).
- * 종단 줄만 가로질러 과도하게 늘리면 경계 처리가 깨지기 쉬워 StretchLast 은 끔.
+ * @page margin 과 동일한 값을 빼서 **실제 인쇄 영역** 크기.
+ * OSMD에 이 크기를 주면 브라우저가 다시 축소·클리핑할 여지가 줄어듦.
+ */
+export function getPrintableContentBoxMm(
+  formatId: OsmdPagedFormatId,
+  marginMm: number = PRINT_PAGE_MARGIN_MM,
+): { widthMm: number; heightMm: number } {
+  const { widthMm, heightMm } = getPaperSizeMm(formatId)
+  const innerW = Math.max(40, widthMm - 2 * marginMm)
+  const innerH = Math.max(60, heightMm - 2 * marginMm)
+  return { widthMm: innerW, heightMm: innerH }
+}
+
+/**
+ * OSMD가 계산하는 페이지와 DOM 폭을 **인쇄 영역**에 맞춤.
+ */
+export function sizePrintHostToContentBoxMm(host: HTMLElement, widthMm: number, heightMm: number): void {
+  const wPx = pxFromPrintMm(widthMm)
+  const hPx = pxFromPrintMm(heightMm)
+  host.style.boxSizing = 'border-box'
+  host.style.overflow = 'visible'
+  host.style.width = `${wPx}px`
+  host.style.minWidth = `${wPx}px`
+  host.style.maxWidth = `${wPx}px`
+  /** 다페이지 세로 스택 — 한 페이지 높이로 제한하지 않음 */
+  host.style.minHeight = `${hPx}px`
+  host.style.height = 'auto'
+}
+
+/**
+ * 화면의 가로 한 줄 모드와 무관하게, 인쇄는 **일반 다페이지 악보**(시스템마다 음자리·조표·박자표 반복은 OSMD 기본 동작).
+ */
+export function applyStandardPrintEngravingMode(osmd: OpenSheetMusicDisplay): void {
+  const rules = osmd.EngravingRules
+  rules.RenderSingleHorizontalStaffline = false
+  rules.RenderClefsAtBeginningOfStaffline = true
+  rules.RenderKeySignatures = true
+  rules.RenderTimeSignatures = true
+}
+
+/**
+ * 한 줄에 마디가 더 들어가도록 간격만 소폭 압축 (@page/OSMD 폭은 별도로 맞춤).
  */
 export function compactPrintSpacingForMeasuresPerSystemTarget(osmd: OpenSheetMusicDisplay): void {
   const rules = osmd.EngravingRules
 
   rules.SheetMaximumWidth = Math.max(rules.SheetMaximumWidth ?? 6000, 65000)
-
-  if (rules.PageLeftMargin > 0.5) rules.PageLeftMargin *= 0.9
-  if (rules.PageRightMargin > 0.5) rules.PageRightMargin *= 0.9
-  if (rules.SystemRightMargin > 0.5) rules.SystemRightMargin *= 0.88
-  if (rules.SystemLabelsRightMargin > 0.5) rules.SystemLabelsRightMargin *= 0.88
-
   rules.StretchLastSystemLine = false
-
-  if (rules.VoiceSpacingMultiplierVexflow > 0) rules.VoiceSpacingMultiplierVexflow *= 0.82
-  if (rules.MinNoteDistance > 0.3) rules.MinNoteDistance *= 0.88
-
-  /** Vex formatter 분배 완급 — 기본 15 근처에서 소폭 높여 정적 단순 악보 한 줄 마디 수에 여지 */
-  if (rules.SoftmaxFactorVexFlow > 5) rules.SoftmaxFactorVexFlow *= 1.08
-  if (rules.MeasureRightMargin > 0.1) rules.MeasureRightMargin *= 0.9
-
   rules.CompactMode = true
-
-  /** OSMD 명시 줄당 마디 분할 기능은 「한 줄당 정확히 x마디」 쪽이라, 여기서는 간격 조정 위주를 씀 */
   rules.RenderXMeasuresPerLineAkaSystem = 0
+
+  if (rules.VoiceSpacingMultiplierVexflow > 0) rules.VoiceSpacingMultiplierVexflow *= 0.86
+  if (rules.MinNoteDistance > 0.3) rules.MinNoteDistance *= 0.9
+  if (rules.SoftmaxFactorVexFlow > 5) rules.SoftmaxFactorVexFlow *= 1.06
+  if (rules.MeasureLeftMargin > 0.1) rules.MeasureLeftMargin *= 0.94
+  if (rules.MeasureRightMargin > 0.1) rules.MeasureRightMargin *= 0.94
 }

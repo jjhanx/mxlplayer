@@ -31,8 +31,12 @@ import {
   type PlaybackScrollLayoutMode,
 } from './audio/playbackScroll'
 import {
+  applyStandardPrintEngravingMode,
   compactPrintSpacingForMeasuresPerSystemTarget,
-  sizeDomHostLikeOsmdPrintPage,
+  getPrintableContentBoxMm,
+  PRINT_OSMD_ZOOM,
+  PRINT_PAGE_MARGIN_MM,
+  sizePrintHostToContentBoxMm,
   type OsmdPagedFormatId,
 } from './print/configurePrintOsmd'
 import './App.css'
@@ -127,14 +131,14 @@ function pickAllowedDroppedFile(dt: DataTransfer | null): File | undefined {
   return undefined
 }
 
-function applyDynamicPrintPageCss(formatId: OsmdPagedFormatId) {
+function applyDynamicPrintPageCss(formatId: OsmdPagedFormatId, marginMm: number) {
   let el = document.getElementById(DYNAMIC_PRINT_PAGE_STYLE_ID) as HTMLStyleElement | null
   if (!el) {
     el = document.createElement('style')
     el.id = DYNAMIC_PRINT_PAGE_STYLE_ID
     document.head.appendChild(el)
   }
-  el.textContent = `@media print { @page { size: ${PRINT_CSS_PAGE_SIZE[formatId]}; margin: 12mm; } }`
+  el.textContent = `@media print { @page { size: ${PRINT_CSS_PAGE_SIZE[formatId]}; margin: ${marginMm}mm; } }`
 }
 
 function removeDynamicPrintPageCss() {
@@ -490,21 +494,29 @@ export default function App() {
 
     try {
       host.innerHTML = ''
-      applyDynamicPrintPageCss(printPageFormat)
+      applyDynamicPrintPageCss(printPageFormat, PRINT_PAGE_MARGIN_MM)
       document.body.classList.add('printing-score')
+
+      const innerBox = getPrintableContentBoxMm(printPageFormat, PRINT_PAGE_MARGIN_MM)
 
       printOsmd = new OpenSheetMusicDisplay(host, {
         followCursor: false,
         autoResize: false,
         darkMode: false,
         defaultColorMusic: DEFAULT_NOTE_COLOR,
-        pageFormat: printPageFormat,
+        /** pageFormat 대신 인쇄 영역(mm)에 맞춘 커스텀 폭 — @page margin 과 합치 */
+        renderSingleHorizontalStaffline: false,
       })
+
+      printOsmd.setCustomPageFormat(innerBox.widthMm, innerBox.heightMm)
 
       await printOsmd.load(payload.kind === 'mxl' ? payload.blob : payload.text)
 
-      sizeDomHostLikeOsmdPrintPage(printPageFormat, host)
+      sizePrintHostToContentBoxMm(host, innerBox.widthMm, innerBox.heightMm)
+      applyStandardPrintEngravingMode(printOsmd)
       compactPrintSpacingForMeasuresPerSystemTarget(printOsmd)
+      printOsmd.Zoom = PRINT_OSMD_ZOOM
+
       printOsmd.updateGraphic()
 
       printOsmd.render()
@@ -712,6 +724,12 @@ export default function App() {
                   <IonSelectOption value="Letter_P">Letter 세로</IonSelectOption>
                   <IonSelectOption value="Letter_L">Letter 가로</IonSelectOption>
                 </IonSelect>
+              </IonItem>
+              <IonItem lines="none">
+                <IonLabel className="muted print-hint">
+                  인쇄는 화면의「가로 한 줄」레이아웃과 달리, OSMD 표준 페이지로 여러 장에 나눕니다(각 줄머리에 음자리·조표·박자표 등이 붙음). 브라우저 인쇄 배율은 100%
+                  권장 — 악보는 앱 안에서 줄입니다.
+                </IonLabel>
               </IonItem>
               <IonItem lines="none">
                 <IonButton
