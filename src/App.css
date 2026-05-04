@@ -52,12 +52,19 @@
   --border-color: rgba(0, 0, 0, 0.08);
 }
 
-.score-panel ion-content {
-  --background: #ffffff;
-}
-
 .score-panel ion-badge {
   --color: #1a1a1a;
+}
+
+.main.score-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.score-panel ion-content {
+  flex: 1;
+  --background: #ffffff;
 }
 
 .sidebar {
@@ -97,12 +104,17 @@
   cursor: crosshair;
 }
 
-/** OSMD renderSingleHorizontalStaffline — 재생 따라가기는 주로 가로 스크롤 */
-.score-div--horizontal-strip {
+/** OSMD renderSingleHorizontalStaffline — 가로 이동, 스태프 세로 높이는 스크롤로 전부 접근 */
+.score-div.score-div--horizontal-strip {
   overflow-x: auto;
-  overflow-y: hidden;
-  min-height: 240px;
-  max-height: min(560px, calc(100vh - 200px));
+  overflow-y: auto;
+  /**
+   * 이전 규칙(낮은 min-height · max-height 560px · overflow-y hidden) 때문에
+   * 그랜드 스태프 아래 줄이 잘림. 기본 패널과 동일한 세로 확보 후,
+   * 스태프가 많으면 세로 스크롤로 표시.
+   */
+  min-height: calc(100vh - 140px);
+  max-height: none;
 }
 
 .print-sandbox {

@@ -150,11 +150,15 @@ function scrollHighlightedNotesIntoViewHorizontal(
   zoom: number,
 ): void {
   const z = zoom > 0 ? zoom : 1
-  const pad = Math.min(scrollParent.clientWidth * 0.08, 64)
-  const marginLeft = pad
-  const marginRight = pad
+  const padX = Math.min(scrollParent.clientWidth * 0.08, 64)
+  const marginLeft = padX
+  const marginRight = padX
 
-  const bySvg: { left: number; right: number }[] = []
+  const padY = Math.min(scrollParent.clientHeight * 0.1, 64)
+  const marginTop = padY
+  const marginBottom = padY
+
+  const bySvg: { left: number; right: number; top: number; bottom: number }[] = []
   for (const gn of graphicalNotes) {
     const svgGrp = (gn as GraphicalNoteWithSvg).getSVGGElement?.()
     if (!svgGrp) continue
@@ -163,6 +167,8 @@ function scrollHighlightedNotesIntoViewHorizontal(
       bySvg.push({
         left: viewportXToScrollContentX(scrollParent, box.left),
         right: viewportXToScrollContentX(scrollParent, box.right),
+        top: viewportYToScrollContentY(scrollParent, box.top),
+        bottom: viewportYToScrollContentY(scrollParent, box.bottom),
       })
     } catch {
       /* 레이아웃 미준비 */
@@ -171,42 +177,65 @@ function scrollHighlightedNotesIntoViewHorizontal(
 
   let minContentX: number
   let maxContentX: number
+  let minContentY: number
+  let maxContentY: number
 
   if (bySvg.length > 0) {
     minContentX = Math.min(...bySvg.map((b) => b.left))
     maxContentX = Math.max(...bySvg.map((b) => b.right))
+    minContentY = Math.min(...bySvg.map((b) => b.top))
+    maxContentY = Math.max(...bySvg.map((b) => b.bottom))
   } else {
     minContentX = Infinity
     maxContentX = -Infinity
+    minContentY = Infinity
+    maxContentY = -Infinity
     for (const gn of graphicalNotes) {
       const gve = gn.parentVoiceEntry?.PositionAndShape?.BoundingRectangle
       if (!gve) continue
       const leftPx = gve.x * 10 * z
       const rightPx = (gve.x + gve.width) * 10 * z
+      const topPx = gve.y * 10 * z
+      const botPx = (gve.y + gve.height) * 10 * z
       minContentX = Math.min(minContentX, leftPx)
       maxContentX = Math.max(maxContentX, rightPx)
+      minContentY = Math.min(minContentY, topPx)
+      maxContentY = Math.max(maxContentY, botPx)
     }
-    if (!Number.isFinite(minContentX)) return
+    if (!Number.isFinite(minContentX) || !Number.isFinite(minContentY)) return
   }
 
   const clientW = scrollParent.clientWidth
   const viewportLeft = scrollParent.scrollLeft
   const viewportRight = viewportLeft + clientW
 
-  if (isHorizontalBlockFullyVisible(viewportLeft, viewportRight, minContentX, maxContentX, marginLeft, marginRight)) {
-    return
+  let nextLeft = scrollParent.scrollLeft
+  if (!isHorizontalBlockFullyVisible(viewportLeft, viewportRight, minContentX, maxContentX, marginLeft, marginRight)) {
+    const maxScrollX = Math.max(0, scrollParent.scrollWidth - clientW)
+    nextLeft = minContentX - marginLeft
+    nextLeft = Math.max(0, Math.min(nextLeft, maxScrollX))
+    const blockRightNeeds = maxContentX + marginRight
+    if (nextLeft + clientW < blockRightNeeds) {
+      nextLeft = blockRightNeeds - clientW
+      nextLeft = Math.max(0, Math.min(nextLeft, maxScrollX))
+    }
   }
 
-  const maxScroll = Math.max(0, scrollParent.scrollWidth - clientW)
+  const clientH = scrollParent.clientHeight
+  const viewportTop = scrollParent.scrollTop
+  const viewportBottom = viewportTop + clientH
 
-  let nextLeft = minContentX - marginLeft
-  nextLeft = Math.max(0, Math.min(nextLeft, maxScroll))
-
-  const blockRightNeeds = maxContentX + marginRight
-  if (nextLeft + clientW < blockRightNeeds) {
-    nextLeft = blockRightNeeds - clientW
-    nextLeft = Math.max(0, Math.min(nextLeft, maxScroll))
+  let nextTop = scrollParent.scrollTop
+  if (!isBlockFullyVisible(viewportTop, viewportBottom, minContentY, maxContentY, marginTop, marginBottom)) {
+    const maxScrollY = Math.max(0, scrollParent.scrollHeight - clientH)
+    nextTop = minContentY - marginTop
+    nextTop = Math.max(0, Math.min(nextTop, maxScrollY))
+    const blockBottomNeeds = maxContentY + marginBottom
+    if (nextTop + clientH < blockBottomNeeds) {
+      nextTop = blockBottomNeeds - clientH
+      nextTop = Math.max(0, Math.min(nextTop, maxScrollY))
+    }
   }
 
-  scrollParent.scrollTo({ left: nextLeft, behavior: 'auto' })
+  scrollParent.scrollTo({ left: nextLeft, top: nextTop, behavior: 'auto' })
 }

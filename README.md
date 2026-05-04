@@ -16,7 +16,7 @@ MusicXML을 **OSMD(OpenSheetMusicDisplay)** 로 렌더링하고, **osmd-audio-pl
 - **시작 위치**: 악보 클릭 시 해당 음표·쉼표 시점부터 재생
 - **파트별 믹싱**: **악기(파트) 인덱스** 기준 Volume / Solo / Mute (동일 MIDI GM 번호를 쓰는 파트도 UI·소리 분리)
 - **Follow-along**: 재생 중 **실제로 들리는 파트의 음표만** 빨간색 표시(OSMD 커서 막대는 숨김). 같은 시각 성부·피아노 등 **강조 블록 전체가 패널 안에 들어오도록** 스크롤합니다. 기본은 **상하** 스크롤이며, **가로 한 줄 악보** 모드일 때는 **`playbackScroll.ts`에서 가로(`scrollLeft`)** 위주로 따라갑니다. 블록이 뷰 안에 들어갈 때만 잘리지 않게 맞추고, 재생 중에는 **짧은 간격(약 90ms)**으로 가시성을 다시 검사해 수동 스크롤 후에도 곧바로 보정합니다.
-- **가로 한 줄 악보**(선택): OSMD **`renderSingleHorizontalStaffline`** — 한 줄 가로 레일 형태로 보려 좌우 스크롤이 자연스럽습니다. 이 옵션은 **처음 로드하기 전**에만 적용되므로, 토글 시 OSMD 인스턴스를 다시 만들고 **같은 파일을 재로드**합니다.
+- **가로 한 줄 악보**(선택): OSMD **`renderSingleHorizontalStaffline`** — 한 줄 가로 레일 형태로 좌우 스크롤이 자연스럽습니다. **피아노처럼 세로로 겹치는 여러 스태프**도 잘리지 않도록 세로 확보 후 **`overflow-y: auto`** 로 부족할 때 세로 바를 제공합니다(`App.css`). 재생 팔로우는 같은 모드에서 **가로·세로 모두** 강조 영역을 뷰에 맞춥니다(`playbackScroll.ts`). 옵션은 **처음 로드하기 전**에만 적용되므로, 토글 시 OSMD를 다시 붙이고 **같은 파일을 재로드**합니다.
 - **인쇄**: 숨김 **iframe**에 OSMD를 **`pageFormat`(A4/Letter 세로·가로)** 로 다시 그린 뒤 브라우저 **`window.print()`** 로 인쇄합니다. 용지에 맞는 **OSMD 페이지 분할·레이아웃**이 적용되며, 실제 잘림·여백은 OSMD와 브라우저 인쇄 엔진에 따라 달라질 수 있습니다.
 
 ## 기술 참고
@@ -28,7 +28,7 @@ MusicXML을 **OSMD(OpenSheetMusicDisplay)** 로 렌더링하고, **osmd-audio-pl
   - **`loadNotes` 타임라인**: 원래 `getFirstEmptyTick()` 플레이스홀더에 의존하면 다성부·백업이 있는 악보에서 스텝 간격이 압축돼 **같은 BPM인데도 특정 구간만 빨라진 것처럼** 들릴 수 있음 → OSMD `VoiceEntry.ParentSourceStaffEntry.AbsoluteTimestamp`로 재생 틱을 직접 잡고(`patchPlaybackScheduler.ts`), 타임스탬프가 없으면 구현에 폴백.
 
 - **파트별 게인**: `src/audio/playbackNoteCallbackPatch.ts`에서 OSMD `Note` 기준 악기 인덱스로 Solo/Mute/볼륨을 적용합니다.
-- **재생 따라가기·스크롤**: `src/audio/playbackScroll.ts` — `scrollHighlightedNotesIntoView(..., layout)` 네 번째 인자로 `'default'(세로)` / `'horizontal-strip'(가로)` 를 둡니다. `App.tsx`의 재생 폴링과 `PlaybackEvent.ITERATION` 핸들러는 레이아웃 전환 후에도 **최신 모드(ref)** 로 스크롤합니다.
+- **재생 따라가기·스크롤**: `src/audio/playbackScroll.ts` — `scrollHighlightedNotesIntoView(..., layout)` 네 번째 인자로 `'default'(세로)` / `'horizontal-strip'(가로+필요 시 세로 보정)'` 를 둡니다. 가로 줄 모드에서는 **시간 따라가기는 좌우**가 주이되, 피아노 등 **위·아래 스태프가 뷰 밖이면 세로 보정도** 합니다. `App.tsx`의 재생 폴링과 `PlaybackEvent.ITERATION` 핸들러는 **최신 레이아웃(ref)** 과 일치하게 호출합니다.
 - **가로 줄·인쇄 전환**: `src/App.tsx` — 화면용 OSMD는 `renderSingleHorizontalStaffline` 과 기본 페이지(엔들리스) 중 하나입니다. 인쇄는 `pageFormat` 이 적용된 별도 OSMD 인스턴스를 iframe 문서에 렌더합니다(마지막으로 불러온 MXL/Text 페이로드 재사용).
 - **악기 인덱스**: `src/audio/instrumentIndexFromNote.ts` — `Instruments` 배열 참조 실패 시 `Instrument.Id` / `IdString`으로 매칭합니다.
 
