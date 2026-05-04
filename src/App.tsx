@@ -510,9 +510,10 @@ export default function App() {
 
       printOsmd.setCustomPageFormat(innerBox.widthMm, innerBox.heightMm)
 
-      await printOsmd.load(payload.kind === 'mxl' ? payload.blob : payload.text)
-
+      /** OSMD render() 가 `container.offsetWidth` 로 페이지 폭을 잡음 — load 전에 맞춤 */
       sizePrintHostToContentBoxMm(host, innerBox.widthMm, innerBox.heightMm)
+
+      await printOsmd.load(payload.kind === 'mxl' ? payload.blob : payload.text)
       applyStandardPrintEngravingMode(printOsmd)
       compactPrintSpacingForMeasuresPerSystemTarget(printOsmd)
       printOsmd.Zoom = PRINT_OSMD_ZOOM

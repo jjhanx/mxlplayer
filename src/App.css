@@ -145,16 +145,27 @@ body.printing-score .score-print-host {
 }
 
 @media print {
+  /**
+   * 절대 배치 박스는 Chrome 등에서 페이지 단편(fragmentation)이 막혀
+   * `#osmdCanvasPage` 의 break-after 가 있어도 전체가 한 장에 스케일될 수 있음.
+   * 인쇄 시에는 일반 흐름으로 두어 페이지 나눔이 적용되게 한다.
+   */
+  body.printing-score,
+  body.printing-score ion-app {
+    height: auto !important;
+    min-height: 0 !important;
+  }
+
   body.printing-score .app-shell {
     display: none !important;
   }
 
   body.printing-score .score-print-host {
     display: block !important;
-    position: absolute !important;
+    position: static !important;
     inset: auto !important;
-    left: 0 !important;
-    top: 0 !important;
+    left: auto !important;
+    top: auto !important;
     width: 100% !important;
     max-width: none !important;
     min-height: unset !important;
@@ -162,7 +173,7 @@ body.printing-score .score-print-host {
     opacity: 1 !important;
     visibility: visible !important;
     pointer-events: auto !important;
-    z-index: 1 !important;
+    z-index: auto !important;
     overflow: visible !important;
     background: #ffffff !important;
     print-color-adjust: exact;
