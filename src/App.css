@@ -136,11 +136,14 @@
   pointer-events: none;
 }
 
-.score-print-host svg {
-  overflow: visible !important;
+.score-print-page-stack {
+  display: block;
 }
 
-body.printing-score .score-print-host {
+.score-print-mount {
+  box-sizing: border-box;
+}
+
   z-index: 2147483646;
 }
 
@@ -180,11 +183,16 @@ body.printing-score .score-print-host {
     -webkit-print-color-adjust: exact;
   }
 
+  body.printing-score .score-print-mount:empty {
+    display: none !important;
+  }
+
   /**
-   * OSMD: 페이지마다 컨테이너 바로 아래에 `div#osmdCanvasPage{n}` 추가 후 그 안에 svg(`#osmdSvgPage{n}`).
-   * 직계 `svg` 에만 나누면 규칙이 한 번도 안 먹어 한 장만 나옴.
+   * OSMD: 페이지마다 `div#osmdCanvasPage{n}` 안에 svg(`#osmdSvgPage{n}`).
+   * 마디 슬라이스 후에는 호스트 직계가 아니라 `.score-print-page-stack` 아래에 모인다.
    */
-  body.printing-score .score-print-host > div[id^='osmdCanvasPage'] {
+  body.printing-score .score-print-host > div[id^='osmdCanvasPage'],
+  body.printing-score .score-print-host .score-print-page-stack > div[id^='osmdCanvasPage'] {
     break-after: page;
     page-break-after: always;
     break-inside: avoid;
@@ -192,7 +200,8 @@ body.printing-score .score-print-host {
     display: block;
   }
 
-  body.printing-score .score-print-host > div[id^='osmdCanvasPage']:last-of-type {
+  body.printing-score .score-print-host > div[id^='osmdCanvasPage']:last-of-type,
+  body.printing-score .score-print-host .score-print-page-stack > div[id^='osmdCanvasPage']:last-of-type {
     break-after: auto;
     page-break-after: auto;
   }

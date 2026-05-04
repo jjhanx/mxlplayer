@@ -40,6 +40,7 @@ import {
   sizePrintHostToContentBoxMm,
   type OsmdPagedFormatId,
 } from './print/configurePrintOsmd'
+import { paginatePrintedScoreSlices } from './print/measureSlicePagination'
 import './App.css'
 
 /** OSMD GraphicalNote.setColor — SVG 백엔드에서 리렌더 없이 적용 */
@@ -500,7 +501,14 @@ export default function App() {
 
       const innerBox = getPrintableContentBoxMm(printPageFormat, PRINT_PAGE_MARGIN_MM)
 
-      printOsmd = new OpenSheetMusicDisplay(host, {
+      const pageStack = document.createElement('div')
+      pageStack.className = 'score-print-page-stack'
+      const printMount = document.createElement('div')
+      printMount.className = 'score-print-mount'
+      host.appendChild(pageStack)
+      host.appendChild(printMount)
+
+      printOsmd = new OpenSheetMusicDisplay(printMount, {
         followCursor: false,
         autoResize: false,
         darkMode: false,
@@ -511,18 +519,15 @@ export default function App() {
 
       printOsmd.setCustomPageFormat(innerBox.widthMm, innerBox.heightMm)
 
-      /** OSMD render() 가 `container.offsetWidth` 로 페이지 폭을 잡음 — load 전에 맞춤 */
-      sizePrintHostToContentBoxMm(host, innerBox.widthMm, innerBox.heightMm)
+      /** OSMD render() 가 `container.offsetWidth` 로 페이지 폭을 잡음 — load 전에 맞춤(OSMD 붙는 노드는 mount) */
+      sizePrintHostToContentBoxMm(printMount, innerBox.widthMm, innerBox.heightMm)
 
       await printOsmd.load(payload.kind === 'mxl' ? payload.blob : payload.text)
       applyStandardPrintEngravingMode(printOsmd)
       compactPrintSpacingForMeasuresPerSystemTarget(printOsmd)
       printOsmd.Zoom = PRINT_OSMD_ZOOM
 
-      printOsmd.updateGraphic()
-
-      void host.offsetWidth
-      printOsmd.render()
+      paginatePrintedScoreSlices(printOsmd, printMount)
 
       /** SVG/Vex 레이아웃 확정까지 — 메인 문서라 iframe 0영역 백지와 달리 OSMD가 실제 박스로 그림 */
       await new Promise<void>((resolve) =>
