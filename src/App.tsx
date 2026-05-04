@@ -59,6 +59,85 @@ const PRINT_CSS_PAGE_SIZE: Record<OsmdPagedFormatId, string> = {
   Letter_L: 'letter landscape',
 }
 
+const DYNAMIC_PRINT_PAGE_STYLE_ID = 'mxlplayer-print-page-css'
+
+function readDataTransferTypeStrings(dt: DataTransfer): string[] {
+  const { types } = dt
+  if (!types || typeof types.length !== 'number') return []
+
+  const itemFn = (
+    /** DOMStringList / 유사 타입 호환 — lib.dom 과 실제 브라우저가 다를 수 있음 */
+    types as unknown as { item?: (i: number) => string | null; length?: number }
+  ).item
+
+  if (typeof itemFn === 'function') {
+    const n = typeof types.length === 'number' ? types.length : 0
+    const out: string[] = []
+    for (let i = 0; i < n; i++) {
+      const token = itemFn.call(types, i)
+      if (token) out.push(String(token))
+    }
+    return out
+  }
+
+  try {
+    return [...(types as readonly string[])]
+  } catch {
+    return []
+  }
+}
+
+/** 드롭 시 types 에 Files 가 없거나 dragover 에서 pd 가 빠져 첫 드롭이 무시되는 경우 방지 */
+function dataTransferLooksLikeExternalFiles(dt: DataTransfer | null): boolean {
+  if (!dt) return false
+
+  const typeTokens = readDataTransferTypeStrings(dt)
+  const lower = typeTokens.map((t) => t.toLowerCase())
+  if (lower.includes('files') || lower.some((t) => t.includes('moz-file'))) return true
+
+  try {
+    if (dt.items && [...dt.items].some((it) => it.kind === 'file')) return true
+  } catch {
+    /* noop */
+  }
+
+  return false
+}
+
+function pickAllowedDroppedFile(dt: DataTransfer | null): File | undefined {
+  if (!dt) return undefined
+  if (dt.files?.length) return [...dt.files].find(isAllowedScoreFile)
+
+  /** 일부 브라우저/컨텍스트에서 items 만 채워지는 경우 */
+  try {
+    if (!dt.items?.length) return undefined
+    for (let i = 0; i < dt.items.length; i++) {
+      const item = dt.items[i]
+      if (item.kind !== 'file') continue
+      const f = item.getAsFile()
+      if (f && isAllowedScoreFile(f)) return f
+    }
+  } catch {
+    /* noop */
+  }
+
+  return undefined
+}
+
+function applyDynamicPrintPageCss(formatId: OsmdPagedFormatId) {
+  let el = document.getElementById(DYNAMIC_PRINT_PAGE_STYLE_ID) as HTMLStyleElement | null
+  if (!el) {
+    el = document.createElement('style')
+    el.id = DYNAMIC_PRINT_PAGE_STYLE_ID
+    document.head.appendChild(el)
+  }
+  el.textContent = `@media print { @page { size: ${PRINT_CSS_PAGE_SIZE[formatId]}; margin: 12mm; } }`
+}
+
+function removeDynamicPrintPageCss() {
+  document.getElementById(DYNAMIC_PRINT_PAGE_STYLE_ID)?.remove()
+}
+
 function resetPlaybackHighlights(highlightedRef: { current: GraphicalNote[] }) {
   for (const gn of highlightedRef.current) {
     try {
@@ -145,7 +224,7 @@ export default function App() {
   const mixerRef = useRef<PlaybackMixer | null>(null)
   const playbackHighlightedRef = useRef<GraphicalNote[]>([])
   const lastPayloadRef = useRef<LastScorePayload | null>(null)
-  const printIframeRef = useRef<HTMLIFrameElement | null>(null)
+  const printHostRef = useRef<HTMLDivElement | null>(null)
 
   const [fileName, setFileName] = useState<string | null>(null)
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
@@ -199,10 +278,19 @@ export default function App() {
   }, [playbackState, playbackScrollLayout, status])
 
   useEffect(() => {
-    const hasFiles = (dt: DataTransfer | null) => dt?.types?.includes('Files') ?? false
+    const clearDragUi = () => {
+      fileDragHighlightRef.current = false
+      setFileDragActive(false)
+    }
+
+    /** capture: Ionic / 하위 레이아웃보다 먼저 처리해 dragover 가 막히지 않게 함 */
+    const onDragEnter = (e: DragEvent) => {
+      if (!dataTransferLooksLikeExternalFiles(e.dataTransfer)) return
+      e.preventDefault()
+    }
 
     const onDragOver = (e: DragEvent) => {
-      if (!hasFiles(e.dataTransfer)) return
+      if (!dataTransferLooksLikeExternalFiles(e.dataTransfer)) return
       e.preventDefault()
       e.dataTransfer!.dropEffect = 'copy'
       if (!fileDragHighlightRef.current) {
@@ -211,29 +299,31 @@ export default function App() {
       }
     }
 
-    const clearDragUi = () => {
-      fileDragHighlightRef.current = false
-      setFileDragActive(false)
-    }
-
     const onDrop = (e: DragEvent) => {
-      if (!hasFiles(e.dataTransfer)) return
+      const file = pickAllowedDroppedFile(e.dataTransfer)
+      if (!file) {
+        clearDragUi()
+        return
+      }
       e.preventDefault()
+      e.stopPropagation()
       clearDragUi()
-      const file = Array.from(e.dataTransfer?.files ?? []).find(isAllowedScoreFile)
-      if (file) void loadFromFileRef.current(file)
+      void loadFromFileRef.current(file)
     }
 
     const onDragEnd = () => clearDragUi()
 
-    window.addEventListener('dragover', onDragOver)
-    window.addEventListener('drop', onDrop)
-    window.addEventListener('dragend', onDragEnd)
+    const opts: AddEventListenerOptions = { capture: true }
+    window.addEventListener('dragenter', onDragEnter, opts)
+    window.addEventListener('dragover', onDragOver, opts)
+    window.addEventListener('drop', onDrop, opts)
+    window.addEventListener('dragend', onDragEnd, opts)
 
     return () => {
-      window.removeEventListener('dragover', onDragOver)
-      window.removeEventListener('drop', onDrop)
-      window.removeEventListener('dragend', onDragEnd)
+      window.removeEventListener('dragenter', onDragEnter, opts)
+      window.removeEventListener('dragover', onDragOver, opts)
+      window.removeEventListener('drop', onDrop, opts)
+      window.removeEventListener('dragend', onDragEnd, opts)
     }
   }, [])
 
@@ -373,32 +463,34 @@ export default function App() {
 
   async function prepareAndPrintPagedScore() {
     const payload = lastPayloadRef.current
-    const iframe = printIframeRef.current
-    if (!payload || !iframe?.contentWindow) return
+    const host = printHostRef.current
+    if (!payload || !host) return
 
     setPrintBusy(true)
+    let printOsmd: OpenSheetMusicDisplay | null = null
+    let cleaned = false
+
+    const teardown = () => {
+      if (cleaned) return
+      cleaned = true
+      removeDynamicPrintPageCss()
+      document.body.classList.remove('printing-score')
+      try {
+        printOsmd?.clear()
+      } catch {
+        /* 이미 노드 없음 등 */
+      }
+      printOsmd = null
+      host.innerHTML = ''
+      setPrintBusy(false)
+    }
+
     try {
-      const frameWin = iframe.contentWindow
-      const frameDoc = iframe.contentDocument
-      if (!frameWin || !frameDoc) throw new Error('프린터용 프레임을 열 수 없습니다.')
+      host.innerHTML = ''
+      applyDynamicPrintPageCss(printPageFormat)
+      document.body.classList.add('printing-score')
 
-      frameDoc.open()
-      frameDoc.write(
-        `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Score Print</title>
-<style>
-@media print {
-  @page { size: ${PRINT_CSS_PAGE_SIZE[printPageFormat]}; margin: 12mm; }
-}
-html, body { margin: 0; padding: 0; background: #fff; }
-#osmd-root { width: 100%; }
-</style></head><body><div id="osmd-root"></div></body></html>`,
-      )
-      frameDoc.close()
-
-      const root = frameDoc.getElementById('osmd-root')
-      if (!root) throw new Error('프린트 레이아웃 루트가 없습니다.')
-
-      const printOsmd = new OpenSheetMusicDisplay(root, {
+      printOsmd = new OpenSheetMusicDisplay(host, {
         followCursor: false,
         autoResize: false,
         darkMode: false,
@@ -409,16 +501,24 @@ html, body { margin: 0; padding: 0; background: #fff; }
       await printOsmd.load(payload.kind === 'mxl' ? payload.blob : payload.text)
       printOsmd.render()
 
-      await new Promise<void>((resolve) => {
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
-      })
+      /** SVG/Vex 레이아웃 확정까지 — 메인 문서라 iframe 0영역 백지와 달리 OSMD가 실제 박스로 그림 */
+      await new Promise<void>((resolve) =>
+        window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve())),
+      )
 
-      frameWin.focus()
-      frameWin.print()
+      const safetyFallback = window.setTimeout(teardown, 120_000)
+
+      const onAfterPrint = () => {
+        window.clearTimeout(safetyFallback)
+        teardown()
+      }
+
+      /** 인쇄 미리보기·대화 상자 종료 후 — 짧은 setTimeout teardown 은 미리 문서가 비워 백지가 될 수 있음 */
+      window.addEventListener('afterprint', onAfterPrint, { once: true })
+      window.print()
     } catch (e) {
       setErrorText(e instanceof Error ? e.message : String(e))
-    } finally {
-      setPrintBusy(false)
+      teardown()
     }
   }
 
@@ -699,12 +799,7 @@ html, body { margin: 0; padding: 0; background: #fff; }
           </IonContent>
         </div>
       </div>
-      <iframe
-        ref={printIframeRef}
-        className="print-sandbox"
-        title="프린터용 렌더"
-        aria-hidden="true"
-      />
+      <div ref={printHostRef} className="score-print-host" aria-hidden="true" />
     </IonApp>
   )
 }
