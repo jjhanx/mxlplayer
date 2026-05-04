@@ -10,11 +10,13 @@ import {
   IonLabel,
   IonList,
   IonRange,
+  IonSelect,
+  IonSelectOption,
   IonTitle,
   IonToggle,
   IonToolbar,
 } from '@ionic/react'
-import { pause, play, stop } from 'ionicons/icons'
+import { pause, play, print as printIcon, stop } from 'ionicons/icons'
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import type { GraphicalNote, Note } from 'opensheetmusicdisplay'
 import { OpenSheetMusicDisplay, PointF2D } from 'opensheetmusicdisplay'
@@ -23,7 +25,11 @@ import { PlaybackEvent, PlaybackState as EnginePlaybackState } from 'osmd-audio-
 import { getInstrumentIndexFromNote } from './audio/instrumentIndexFromNote'
 import { PlaybackMixer } from './audio/playbackMixer'
 import { installInstrumentAwareNotePlayback } from './audio/playbackNoteCallbackPatch'
-import { scrollHighlightedNotesIntoView, PLAYBACK_SCROLL_KEEP_VISIBLE_MS } from './audio/playbackScroll'
+import {
+  scrollHighlightedNotesIntoView,
+  PLAYBACK_SCROLL_KEEP_VISIBLE_MS,
+  type PlaybackScrollLayoutMode,
+} from './audio/playbackScroll'
 import './App.css'
 
 /** OSMD GraphicalNote.setColor — SVG 백엔드에서 리렌더 없이 적용 */
@@ -40,6 +46,17 @@ const NOTE_COLOR_OPTS = {
 function isAllowedScoreFile(file: File): boolean {
   const n = file.name.toLowerCase()
   return n.endsWith('.xml') || n.endsWith('.musicxml') || n.endsWith('.mxl')
+}
+
+type LastScorePayload = { kind: 'mxl'; blob: Blob } | { kind: 'xml'; text: string }
+
+type OsmdPagedFormatId = 'A4_P' | 'A4_L' | 'Letter_P' | 'Letter_L'
+
+const PRINT_CSS_PAGE_SIZE: Record<OsmdPagedFormatId, string> = {
+  A4_P: 'A4 portrait',
+  A4_L: 'A4 landscape',
+  Letter_P: 'letter portrait',
+  Letter_L: 'letter landscape',
 }
 
 function resetPlaybackHighlights(highlightedRef: { current: GraphicalNote[] }) {
@@ -127,6 +144,8 @@ export default function App() {
   const engineRef = useRef<PlaybackEngine | null>(null)
   const mixerRef = useRef<PlaybackMixer | null>(null)
   const playbackHighlightedRef = useRef<GraphicalNote[]>([])
+  const lastPayloadRef = useRef<LastScorePayload | null>(null)
+  const printIframeRef = useRef<HTMLIFrameElement | null>(null)
 
   const [fileName, setFileName] = useState<string | null>(null)
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
@@ -135,6 +154,15 @@ export default function App() {
   const [playbackState, setPlaybackState] = useState<PlaybackState>('INIT')
   const [bpm, setBpm] = useState<number>(100)
   const [parts, setParts] = useState<PartControl[]>([])
+  const [horizontalStafflineLayout, setHorizontalStafflineLayout] = useState(false)
+  const [printPageFormat, setPrintPageFormat] = useState<OsmdPagedFormatId>('A4_P')
+  const [printBusy, setPrintBusy] = useState(false)
+
+  const playbackScrollLayout: PlaybackScrollLayoutMode = horizontalStafflineLayout
+    ? 'horizontal-strip'
+    : 'default'
+  const playbackScrollLayoutRef = useRef<PlaybackScrollLayoutMode>(playbackScrollLayout)
+  playbackScrollLayoutRef.current = playbackScrollLayout
 
   const canPlay = status === 'ready' && (playbackState === 'STOPPED' || playbackState === 'PAUSED')
   const canPause = status === 'ready' && playbackState === 'PLAYING'
@@ -160,10 +188,15 @@ export default function App() {
       if (!osmd) return
       const gn = playbackHighlightedRef.current
       if (gn.length === 0) return
-      scrollHighlightedNotesIntoView(scoreDivRef.current, gn, osmd.Zoom ?? 1)
+      scrollHighlightedNotesIntoView(
+        scoreDivRef.current,
+        gn,
+        osmd.Zoom ?? 1,
+        playbackScrollLayout,
+      )
     }, PLAYBACK_SCROLL_KEEP_VISIBLE_MS)
     return () => clearInterval(timer)
-  }, [playbackState, status])
+  }, [playbackState, playbackScrollLayout, status])
 
   useEffect(() => {
     const hasFiles = (dt: DataTransfer | null) => dt?.types?.includes('Files') ?? false
@@ -204,18 +237,24 @@ export default function App() {
     }
   }, [])
 
-  async function ensureEngines() {
-    if (!scoreDivRef.current) throw new Error('Score container missing')
+  function recreateOsmd(horizontalStrip: boolean) {
+    const container = scoreDivRef.current
+    if (!container) throw new Error('Score container missing')
+    osmdRef.current?.clear()
+    osmdRef.current = null
+    container.innerHTML = ''
+    /** `renderSingleHorizontalStaffline` 는 load 직전 — 옵션 바꿀 때마다 인스턴스를 새로 붙임 */
+    osmdRef.current = new OpenSheetMusicDisplay(container, {
+      followCursor: false,
+      autoResize: true,
+      darkMode: false,
+      defaultColorMusic: DEFAULT_NOTE_COLOR,
+      renderSingleHorizontalStaffline: horizontalStrip,
+    })
+  }
 
-    if (!osmdRef.current) {
-      osmdRef.current = new OpenSheetMusicDisplay(scoreDivRef.current, {
-        /** 커서 next() 한 줄 기준 스크롤은 다성부+피아노 묶음에서 한 스태프만 보일 수 있음 → 재생 시 직접 스크롤 */
-        followCursor: false,
-        autoResize: true,
-        darkMode: false,
-        defaultColorMusic: DEFAULT_NOTE_COLOR,
-      })
-    }
+  async function ensurePlaybackEngine() {
+    if (!scoreDivRef.current) throw new Error('Score container missing')
 
     if (!engineRef.current) {
       engineRef.current = new PlaybackEngine()
@@ -244,6 +283,7 @@ export default function App() {
               scoreDivRef.current,
               playbackHighlightedRef.current,
               osmd.Zoom ?? 1,
+              playbackScrollLayoutRef.current,
             )
           })
         })
@@ -258,43 +298,129 @@ export default function App() {
     }
   }
 
+  async function loadScoreIntoOsmdAndEngine(payload: LastScorePayload, horizontalStrip: boolean) {
+    await ensurePlaybackEngine()
+    recreateOsmd(horizontalStrip)
+
+    const osmd = osmdRef.current!
+    const engine = engineRef.current!
+
+    if ((engine.state as PlaybackState) === 'PLAYING') await engine.stop()
+    resetPlaybackHighlights(playbackHighlightedRef)
+
+    if (payload.kind === 'mxl') {
+      await osmd.load(payload.blob)
+    } else {
+      await osmd.load(payload.text)
+    }
+
+    osmd.render()
+
+    await engine.loadScore(osmd)
+    setPlaybackState(engine.state as PlaybackState)
+
+    setBpm(engine.playbackSettings.bpm)
+    setParts(buildPartControls(osmd))
+  }
+
   async function loadFromFile(file: File) {
     try {
       setStatus('loading')
       setErrorText(null)
       setFileName(file.name)
 
-      await ensureEngines()
-      const osmd = osmdRef.current!
-      const engine = engineRef.current!
-
-      if ((engine.state as PlaybackState) === 'PLAYING') await engine.stop()
-      resetPlaybackHighlights(playbackHighlightedRef)
-
+      let payload: LastScorePayload
       const extension = file.name.toLowerCase().split('.').pop()
       if (extension === 'mxl') {
         const buf = await file.arrayBuffer()
-        await osmd.load(new Blob([buf]))
+        payload = { kind: 'mxl', blob: new Blob([buf]) }
       } else {
         const text = await file.text()
-        await osmd.load(text)
+        payload = { kind: 'xml', text }
       }
+      lastPayloadRef.current = payload
 
-      await osmd.render()
-
-      await engine.loadScore(osmd)
-      setPlaybackState(engine.state as PlaybackState)
-
-      setBpm(engine.playbackSettings.bpm)
-      setParts(buildPartControls(osmd))
+      await loadScoreIntoOsmdAndEngine(payload, horizontalStafflineLayout)
       setStatus('ready')
     } catch (e) {
       setStatus('error')
       setErrorText(e instanceof Error ? e.message : String(e))
+      lastPayloadRef.current = null
     }
   }
 
   loadFromFileRef.current = loadFromFile
+
+  async function onHorizontalStafflineToggle(enabled: boolean) {
+    const payload = lastPayloadRef.current
+    if (!payload || status !== 'ready') {
+      setHorizontalStafflineLayout(enabled)
+      return
+    }
+    if (enabled === horizontalStafflineLayout) return
+
+    try {
+      setStatus('loading')
+      setErrorText(null)
+      await loadScoreIntoOsmdAndEngine(payload, enabled)
+      setHorizontalStafflineLayout(enabled)
+      setStatus('ready')
+    } catch (e) {
+      setStatus('ready')
+      setErrorText(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  async function prepareAndPrintPagedScore() {
+    const payload = lastPayloadRef.current
+    const iframe = printIframeRef.current
+    if (!payload || !iframe?.contentWindow) return
+
+    setPrintBusy(true)
+    try {
+      const frameWin = iframe.contentWindow
+      const frameDoc = iframe.contentDocument
+      if (!frameWin || !frameDoc) throw new Error('프린터용 프레임을 열 수 없습니다.')
+
+      frameDoc.open()
+      frameDoc.write(
+        `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Score Print</title>
+<style>
+@media print {
+  @page { size: ${PRINT_CSS_PAGE_SIZE[printPageFormat]}; margin: 12mm; }
+}
+html, body { margin: 0; padding: 0; background: #fff; }
+#osmd-root { width: 100%; }
+</style></head><body><div id="osmd-root"></div></body></html>`,
+      )
+      frameDoc.close()
+
+      const root = frameDoc.getElementById('osmd-root')
+      if (!root) throw new Error('프린트 레이아웃 루트가 없습니다.')
+
+      const printOsmd = new OpenSheetMusicDisplay(root, {
+        followCursor: false,
+        autoResize: false,
+        darkMode: false,
+        defaultColorMusic: DEFAULT_NOTE_COLOR,
+        pageFormat: printPageFormat,
+      })
+
+      await printOsmd.load(payload.kind === 'mxl' ? payload.blob : payload.text)
+      printOsmd.render()
+
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      })
+
+      frameWin.focus()
+      frameWin.print()
+    } catch (e) {
+      setErrorText(e instanceof Error ? e.message : String(e))
+    } finally {
+      setPrintBusy(false)
+    }
+  }
 
   async function onPlay() {
     const engine = engineRef.current
@@ -451,6 +577,48 @@ export default function App() {
 
             <IonList inset>
               <IonItem>
+                <IonLabel>
+                  <div className="label-title">가로 한 줄 악보</div>
+                  <div className="label-subtitle">
+                    OSMD 한 줄 가로 보표 — 재생 시 가로 스크롤로 따라갑니다. 켤 때 악보를 다시 배치합니다.
+                  </div>
+                </IonLabel>
+                <IonToggle
+                  slot="end"
+                  checked={horizontalStafflineLayout}
+                  disabled={status === 'loading'}
+                  onIonChange={(e) => void onHorizontalStafflineToggle(Boolean(e.detail.checked))}
+                />
+              </IonItem>
+              <IonItem>
+                <IonSelect
+                  label="인쇄 용지 (OSMD)"
+                  labelPlacement="stacked"
+                  value={printPageFormat}
+                  interface="popover"
+                  disabled={status === 'loading' || printBusy}
+                  onIonChange={(e) => setPrintPageFormat(String(e.detail.value) as OsmdPagedFormatId)}
+                >
+                  <IonSelectOption value="A4_P">A4 세로</IonSelectOption>
+                  <IonSelectOption value="A4_L">A4 가로</IonSelectOption>
+                  <IonSelectOption value="Letter_P">Letter 세로</IonSelectOption>
+                  <IonSelectOption value="Letter_L">Letter 가로</IonSelectOption>
+                </IonSelect>
+              </IonItem>
+              <IonItem lines="none">
+                <IonButton
+                  expand="block"
+                  disabled={status !== 'ready' || printBusy}
+                  onClick={() => void prepareAndPrintPagedScore()}
+                >
+                  <IonIcon slot="start" icon={printIcon} />
+                  선택한 용지로 인쇄
+                </IonButton>
+              </IonItem>
+            </IonList>
+
+            <IonList inset>
+              <IonItem>
                 <IonLabel>파트별 Solo / Mute / 볼륨</IonLabel>
               </IonItem>
               {parts.length === 0 ? (
@@ -517,7 +685,13 @@ export default function App() {
             <div className="score-surface">
               <div
                 ref={scoreDivRef}
-                className={status === 'ready' ? 'score-div score-div--seekable' : 'score-div'}
+                className={[
+                  'score-div',
+                  status === 'ready' ? 'score-div--seekable' : '',
+                  horizontalStafflineLayout ? 'score-div--horizontal-strip' : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
                 onClick={handleScoreSeek}
                 title={status === 'ready' ? '클릭하여 재생 시작 위치 설정' : undefined}
               />
@@ -525,6 +699,12 @@ export default function App() {
           </IonContent>
         </div>
       </div>
+      <iframe
+        ref={printIframeRef}
+        className="print-sandbox"
+        title="프린터용 렌더"
+        aria-hidden="true"
+      />
     </IonApp>
   )
 }
