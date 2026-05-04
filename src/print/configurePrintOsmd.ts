@@ -42,8 +42,10 @@ export function getPrintableContentBoxMm(
   marginMm: number = PRINT_PAGE_MARGIN_MM,
 ): { widthMm: number; heightMm: number } {
   const { widthMm, heightMm } = getPaperSizeMm(formatId)
-  const innerW = Math.max(40, widthMm - 2 * marginMm)
-  const innerH = Math.max(60, heightMm - 2 * marginMm)
+  // 브라우저 렌더링 오차로 인해 인쇄 영역을 1px이라도 벗어나면 짝수(빈) 페이지가 추가로 출력되므로,
+  // 여유 버퍼를 주어 높이와 폭을 약간 더 줄입니다.
+  const innerW = Math.max(40, widthMm - 2 * marginMm - 2)
+  const innerH = Math.max(60, heightMm - 2 * marginMm - 4)
   return { widthMm: innerW, heightMm: innerH }
 }
 

@@ -17,10 +17,13 @@ function buildMinimalPrintDocumentCss(pageSizeCss: string, marginMm: number): st
       box-sizing: border-box;
       width: 100%;
       max-width: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
       break-after: page;
       page-break-after: always;
-      break-inside: auto;
-      page-break-inside: auto;
+      break-inside: avoid;
+      page-break-inside: avoid;
     }
     .print-score-sheet:last-child {
       break-after: auto;
