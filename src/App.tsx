@@ -41,6 +41,7 @@ import {
   type OsmdPagedFormatId,
 } from './print/configurePrintOsmd'
 import { paginatePrintedScoreSlices } from './print/measureSlicePagination'
+import { printScorePageStackInIframe } from './print/printScoreInIframe'
 import './App.css'
 
 /** OSMD GraphicalNote.setColor — SVG 백엔드에서 리렌더 없이 적용 */
@@ -67,8 +68,6 @@ const PRINT_CSS_PAGE_SIZE: Record<OsmdPagedFormatId, string> = {
   Letter_P: 'letter portrait',
   Letter_L: 'letter landscape',
 }
-
-const DYNAMIC_PRINT_PAGE_STYLE_ID = 'mxlplayer-print-page-css'
 
 function readDataTransferTypeStrings(dt: DataTransfer): string[] {
   const { types } = dt
@@ -131,62 +130,6 @@ function pickAllowedDroppedFile(dt: DataTransfer | null): File | undefined {
   }
 
   return undefined
-}
-
-function applyDynamicPrintPageCss(formatId: OsmdPagedFormatId, marginMm: number) {
-  let el = document.getElementById(DYNAMIC_PRINT_PAGE_STYLE_ID) as HTMLStyleElement | null
-  if (!el) {
-    el = document.createElement('style')
-    el.id = DYNAMIC_PRINT_PAGE_STYLE_ID
-    document.head.appendChild(el)
-  }
-  el.textContent = `@media print { @page { size: ${PRINT_CSS_PAGE_SIZE[formatId]}; margin: ${marginMm}mm; } }`
-}
-
-function removeDynamicPrintPageCss() {
-  document.getElementById(DYNAMIC_PRINT_PAGE_STYLE_ID)?.remove()
-}
-
-/**
- * Electron/일부 Chromium 계열에서 `afterprint` 가 미리보기가 열리기 직전에도 한 번 나가,
- * 곧바로 DOM 을 비우면 **빈 장**만 인쇄됨. `matchMedia('print')` 가 false 로 돌아온 뒤에 정리한다.
- */
-function attachPrintSessionEndOnce(onEnd: () => void): void {
-  const mq = window.matchMedia('print')
-  const mqCompat = mq as MediaQueryList & {
-    addListener?: (cb: () => void) => void
-    removeListener?: (cb: () => void) => void
-  }
-
-  let done = false
-  const finish = () => {
-    if (done) return
-    done = true
-    if (typeof mq.removeEventListener === 'function') mq.removeEventListener('change', onMqChange)
-    else mqCompat.removeListener?.(onMqLegacy)
-    window.setTimeout(onEnd, 480)
-  }
-
-  const onMqChange = (ev: MediaQueryListEvent) => {
-    if (!ev.matches) finish()
-  }
-  const onMqLegacy = () => {
-    if (!mq.matches) finish()
-  }
-
-  if (typeof mq.addEventListener === 'function') mq.addEventListener('change', onMqChange)
-  else mqCompat.addListener?.(onMqLegacy)
-
-  /** afterprint 만 믿지 않되, 미리보기가 열린 직후에는 보통 `print` 미디어가 아직 true → 여기서는 무시 */
-  window.addEventListener(
-    'afterprint',
-    () => {
-      window.setTimeout(() => {
-        if (!window.matchMedia('print').matches) finish()
-      }, 700)
-    },
-    { once: true },
-  )
 }
 
 function resetPlaybackHighlights(highlightedRef: { current: GraphicalNote[] }) {
@@ -276,6 +219,7 @@ export default function App() {
   const playbackHighlightedRef = useRef<GraphicalNote[]>([])
   const lastPayloadRef = useRef<LastScorePayload | null>(null)
   const printHostRef = useRef<HTMLDivElement | null>(null)
+  const printIframeCleanupRef = useRef<(() => void) | null>(null)
 
   const [fileName, setFileName] = useState<string | null>(null)
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
@@ -517,9 +461,8 @@ export default function App() {
     if (!payload || status !== 'ready') return
 
     /**
-     * 인쇄는 항상 `body` 포탈의 `.score-print-host` 에서 처리.
-     * Ion 본문·flex overflow 때문에 화면 `score-div` 에 직접 인쇄하면 백지·하단 찌꺼기가 잘 발생함.
-     * 가로 한 줄 표시 여부와 무관하게 동일하게 로드 후 `paginatePrintedScoreSlices` 로 다페이지 구성.
+     * OSMD는 포탈 `.score-print-host` 안에서 렌더한 뒤, **별도 iframe 문서를 `print`** 함.
+     * 메인 Ionic 문서에서 `window.print()` 하면 미리보기가 빈 장으로 나오는 환경이 있음.
      */
     const host = printHostRef.current
     if (!host) return
@@ -531,8 +474,8 @@ export default function App() {
     const teardown = () => {
       if (cleaned) return
       cleaned = true
-      removeDynamicPrintPageCss()
-      document.body.classList.remove('printing-score')
+      printIframeCleanupRef.current?.()
+      printIframeCleanupRef.current = null
       try {
         printOsmd?.clear()
       } catch {
@@ -544,6 +487,8 @@ export default function App() {
     }
 
     try {
+      printIframeCleanupRef.current?.()
+      printIframeCleanupRef.current = null
       host.innerHTML = ''
 
       const eng = engineRef.current
@@ -551,9 +496,6 @@ export default function App() {
         await eng.pause()
         setPlaybackState(eng.state as PlaybackState)
       }
-
-      applyDynamicPrintPageCss(printPageFormat, PRINT_PAGE_MARGIN_MM)
-      document.body.classList.add('printing-score')
 
       const innerBox = getPrintableContentBoxMm(printPageFormat, PRINT_PAGE_MARGIN_MM)
 
@@ -590,6 +532,12 @@ export default function App() {
         window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve())),
       )
 
+      if (pageStack.childElementCount === 0) {
+        setErrorText('인쇄용 페이지를 만들 수 없습니다. 악보를 다시 불러온 뒤 시도해 보세요.')
+        teardown()
+        return
+      }
+
       const safetyFallback = window.setTimeout(teardown, 120_000)
 
       const endSession = () => {
@@ -597,10 +545,12 @@ export default function App() {
         teardown()
       }
 
-      window.addEventListener('beforeprint', () => void host.offsetHeight, { once: true })
-
-      attachPrintSessionEndOnce(endSession)
-      window.print()
+      printIframeCleanupRef.current = printScorePageStackInIframe(
+        pageStack,
+        PRINT_CSS_PAGE_SIZE[printPageFormat],
+        PRINT_PAGE_MARGIN_MM,
+        endSession,
+      )
     } catch (e) {
       setErrorText(e instanceof Error ? e.message : String(e))
       teardown()
