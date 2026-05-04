@@ -18,6 +18,7 @@ import {
 } from '@ionic/react'
 import { pause, play, print as printIcon, stop } from 'ionicons/icons'
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
+import { createPortal } from 'react-dom'
 import type { GraphicalNote, Note } from 'opensheetmusicdisplay'
 import { OpenSheetMusicDisplay, PointF2D } from 'opensheetmusicdisplay'
 import PlaybackEngine from 'osmd-audio-player'
@@ -520,6 +521,7 @@ export default function App() {
 
       printOsmd.updateGraphic()
 
+      void host.offsetWidth
       printOsmd.render()
 
       /** SVG/Vex 레이아웃 확정까지 — 메인 문서라 iframe 0영역 백지와 달리 OSMD가 실제 박스로 그림 */
@@ -620,7 +622,8 @@ export default function App() {
   }
 
   return (
-    <IonApp>
+    <>
+      <IonApp>
       <div className={fileDragActive ? 'app-shell app-shell--file-drag' : 'app-shell'}>
         <div className="sidebar">
           <IonHeader>
@@ -826,8 +829,14 @@ export default function App() {
           </IonContent>
         </div>
       </div>
-      <div ref={printHostRef} className="score-print-host" aria-hidden="true" />
-    </IonApp>
+      </IonApp>
+      {typeof document !== 'undefined'
+        ? createPortal(
+            <div ref={printHostRef} className="score-print-host" aria-hidden="true" />,
+            document.body,
+          )
+        : null}
+    </>
   )
 }
 
