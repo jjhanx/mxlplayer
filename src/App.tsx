@@ -32,15 +32,11 @@ import {
   type PlaybackScrollLayoutMode,
 } from './audio/playbackScroll'
 import {
-  applyStandardPrintEngravingMode,
-  compactPrintSpacingForMeasuresPerSystemTarget,
   getPrintableContentBoxMm,
-  PRINT_OSMD_ZOOM,
   PRINT_PAGE_MARGIN_MM,
   sizePrintHostToContentBoxMm,
   type OsmdPagedFormatId,
 } from './print/configurePrintOsmd'
-import { paginatePrintedScoreSlices } from './print/measureSlicePagination'
 import { printScorePageStackInIframe } from './print/printScoreInIframe'
 import './App.css'
 
@@ -521,11 +517,26 @@ export default function App() {
       sizePrintHostToContentBoxMm(printMount, innerBox.widthMm, innerBox.heightMm)
 
       await printOsmd.load(payload.kind === 'mxl' ? payload.blob : payload.text)
-      applyStandardPrintEngravingMode(printOsmd)
-      compactPrintSpacingForMeasuresPerSystemTarget(printOsmd)
-      printOsmd.Zoom = PRINT_OSMD_ZOOM
+      
+      const rules = printOsmd.EngravingRules
+      rules.RenderSingleHorizontalStaffline = false
+      rules.RenderClefsAtBeginningOfStaffline = true
+      rules.RenderKeySignatures = true
+      rules.RenderTimeSignatures = true
+      
+      // 악보 크기를 줄여 한 줄에 최소 4마디 이상 들어가도록 유도
+      printOsmd.Zoom = 0.55 
+      
+      printOsmd.render()
 
-      paginatePrintedScoreSlices(printOsmd, printMount)
+      // OSMD가 내부적으로 자동 생성한 다중 페이지(SVG/Canvas)들을 pageStack으로 이동
+      const pages = Array.from(printMount.children)
+      for (const page of pages) {
+        const wrap = document.createElement('div')
+        wrap.className = 'print-score-sheet'
+        wrap.appendChild(page)
+        pageStack.appendChild(wrap)
+      }
 
       /** SVG/Vex 레이아웃 확정까지 — 메인 문서라 iframe 0영역 백지와 달리 OSMD가 실제 박스로 그림 */
       await new Promise<void>((resolve) =>

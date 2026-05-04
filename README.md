@@ -18,9 +18,9 @@ MusicXML을 **OSMD(OpenSheetMusicDisplay)** 로 렌더링하고, **osmd-audio-pl
 - **Follow-along**: 재생 중 **실제로 들리는 파트의 음표만** 빨간색 표시(OSMD 커서 막대는 숨김). 같은 시각 성부·피아노 등 **강조 블록 전체가 패널 안에 들어오도록** 스크롤합니다. 기본은 **상하** 스크롤이며, **가로 한 줄 악보** 모드일 때는 **`playbackScroll.ts`에서 가로(`scrollLeft`)** 위주로 따라갑니다. 블록이 뷰 안에 들어갈 때만 잘리지 않게 맞추고, 재생 중에는 **짧은 간격(약 90ms)**으로 가시성을 다시 검사해 수동 스크롤 후에도 곧바로 보정합니다.
 - **가로 한 줄 악보**(선택): OSMD **`renderSingleHorizontalStaffline`** — 한 줄 가로 레일 형태로 좌우 스크롤이 자연스럽습니다. **피아노처럼 세로로 겹치는 여러 스태프**도 잘리지 않도록 세로 확보 후 **`overflow-y: auto`** 로 부족할 때 세로 바를 제공합니다(`App.css`). 재생 팔로우는 같은 모드에서 **가로·세로 모두** 강조 영역을 뷰에 맞춥니다(`playbackScroll.ts`). 옵션은 **처음 로드하기 전**에만 적용되므로, 토글 시 OSMD를 다시 붙이고 **같은 파일을 재로드**합니다.
 - **인쇄**
-  - **`document.body` 포탈의 `.score-print-host`** 에 **별도 OSMD**를 만들고, 같은 원본(`mxl`/문자열)을 **다시 로드**합니다(`App.tsx`). Ion `ion-content`·`.main` 의 `overflow`/스크롤 때문에 **화면 `score-div`에 직접 인쇄하면** 백지·미리보기 하단 찌꺼기가 잘 나와, 화면 인스턴스를 쓰지 않습니다.
-  - 화면이 **가로 한 줄**이든 **세로**이든 인쇄는 항상 **`renderSingleHorizontalStaffline: false`** + `setCustomPageFormat`(인쇄 영역 mm) + `PRINT_OSMD_ZOOM` 등(`configurePrintOsmd.ts`). 인쇄 시 `body.printing-score` + `@media print` 로 **`#root`/`.app-shell` 숨김** 후 포탈 호스트만 종이로 나갑니다(`App.css`).
-  - **다페이지**: `measureSlicePagination.ts` — 마디 블록(`PRINT_MEASURES_PER_SLICE`, 기본 **2**)마다 **`updateGraphic`/`render`** 하여 스택에 쌓고, 슬라이스마다 OSMD 가 다시 `osmdCanvasPage1` 같은 id 를 쓰므로 **`.print-score-sheet` 로 한 장씩 감싸** DOM id 중복·인쇄 엔진의 한 페이지 스케일을 피함. `@media print` 에서 래퍼마다 **`page-break-after`**(`App.css`).
+  - **`document.body` 포탈의 `.score-print-host`** 에 **별도 OSMD**를 만들고, 원본을 다시 로드하여 인쇄용 악보를 렌더링합니다(`App.tsx`).
+  - **다페이지 및 크기 조절**: 과거 마디 단위로 잘라서 강제로 여러 페이지에 붙이던 로직을 제거하고, 대신 OSMD 엔진에 인쇄 영역 크기(`PageFormat`)를 지정한 뒤 **기본 다중 페이지 렌더링**을 활용합니다. 화면 모드(가로 한 줄)와 관계없이 인쇄용은 무조건 `renderSingleHorizontalStaffline = false`를 적용하며, 한 줄에 최소 4마디 이상 들어가도록 `Zoom = 0.55` 비율을 부여하여 여러 파트(Staff)가 같이 한 페이지에 깔끔하게 인쇄되도록 개선했습니다.
+  - 생성된 다중 페이지(SVG/Canvas 등) 객체를 루프를 돌아 인쇄용 스택(`.print-score-sheet`)으로 옮겨 래핑함으로써, 브라우저 인쇄 엔진이 올바르게 페이지를 나누도록 처리했습니다(`App.tsx`).
   - **`@page` 여백**은 `PRINT_PAGE_MARGIN_MM` 과 OSMD에 넘기는 mm와 동일. 브라우저 **배율 100%** 권장.
 
 ## 기술 참고
