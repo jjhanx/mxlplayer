@@ -1,4 +1,5 @@
 import { attachPrintSessionEndOnce } from './printSession'
+import { uniquifyPrintSheetDomIds } from './uniquifyPrintDomIds'
 
 function buildMinimalPrintDocumentCss(pageSizeCss: string, marginMm: number): string {
   return `
@@ -8,6 +9,8 @@ function buildMinimalPrintDocumentCss(pageSizeCss: string, marginMm: number): st
       padding: 0;
       background: #ffffff;
       color: #000000;
+      width: 100%;
+      max-width: 100%;
     }
     .print-score-sheet {
       display: block;
@@ -24,7 +27,9 @@ function buildMinimalPrintDocumentCss(pageSizeCss: string, marginMm: number): st
       page-break-after: auto;
     }
     svg {
+      display: block;
       max-width: 100% !important;
+      width: 100%;
       height: auto !important;
       overflow: visible !important;
     }
@@ -77,8 +82,11 @@ export function printScorePageStackInIframe(
   d.close()
 
   const ibody = d.body
-  for (const node of [...pageStack.children]) {
-    ibody.appendChild(d.importNode(node.cloneNode(true), true))
+  const sheets = [...pageStack.children]
+  for (let i = 0; i < sheets.length; i++) {
+    const cloned = sheets[i].cloneNode(true) as HTMLElement
+    uniquifyPrintSheetDomIds(cloned, i)
+    ibody.appendChild(d.importNode(cloned, true))
   }
 
   if (ibody.childElementCount === 0) {
