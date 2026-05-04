@@ -144,9 +144,26 @@
   box-sizing: border-box;
 }
 
-/** 인쇄 준비 중(스크린): 악보만 앱 위로 — 인쇄 시에는 아래 @media print 가 z-index 정리 */
-body.printing-score .score-print-host {
+/** 인쇄 준비 중(스크린): 포탈용 호스트만 앱 위로 — 화면 OSMD 인쇄에는 사용 안 함 */
+body.printing-score.printing-score--portal .score-print-host {
   z-index: 2147483646;
+}
+
+/** 화면 OSMD 인쇄 준비: 사이드바 숨김 */
+body.printing-score.printing-score--screen .sidebar {
+  display: none !important;
+}
+
+body.printing-score.printing-score--screen .app-shell {
+  gap: 0 !important;
+  padding: 0 !important;
+}
+
+body.printing-score.printing-score--screen .main.score-panel {
+  flex: 1 1 auto !important;
+  width: 100% !important;
+  max-width: none !important;
+  max-height: none !important;
 }
 
 @media print {
@@ -162,18 +179,41 @@ body.printing-score .score-print-host {
   }
 
   /**
-   * 악보는 #root 밖(body 직계)에 포탈로 붙임. 인쇄 시 플레이어 UI(#root·IonApp 전체)를 완전히 끄고
-   * 오직 .score-print-host 만 남김(파서 깨짐· Ionic 스타일 때문에 .app-shell 만 숨길 때 플레이어가 남는 경우 방지).
+   * 포탈 경로만 #root 숨김. 화면 OSMD 인쇄(...)는 `#root` 안의 score 패널만 쓸 수 있도록 둠.
    */
-  body.printing-score #root {
+  body.printing-score.printing-score--portal #root {
     display: none !important;
   }
 
-  body.printing-score .app-shell {
+  body.printing-score.printing-score--portal .app-shell {
     display: none !important;
   }
 
-  body.printing-score .score-print-host {
+  body.printing-score.printing-score--screen .sidebar {
+    display: none !important;
+  }
+
+  body.printing-score.printing-score--screen .score-surface {
+    padding: 0 !important;
+  }
+
+  body.printing-score.printing-score--screen .score-panel ion-header {
+    display: none !important;
+  }
+
+  body.printing-score.printing-score--screen .score-div {
+    position: static !important;
+    border: none !important;
+    background: #ffffff !important;
+    overflow: visible !important;
+  }
+
+  /** 포탈에 붙인 빈 인쇄 호스트만 숨김(화면 OSMD 방식에서는 비어 있음) */
+  body.printing-score.printing-score--screen .score-print-host:empty {
+    display: none !important;
+  }
+
+  body.printing-score.printing-score--portal .score-print-host {
     display: block !important;
     position: static !important;
     inset: auto !important;
@@ -193,16 +233,16 @@ body.printing-score .score-print-host {
     -webkit-print-color-adjust: exact;
   }
 
-  body.printing-score .score-print-mount:empty {
+  body.printing-score.printing-score--portal .score-print-mount:empty {
     display: none !important;
   }
 
   /**
    * OSMD: 페이지마다 `div#osmdCanvasPage{n}` 안에 svg(`#osmdSvgPage{n}`).
-   * 마디 슬라이스 후에는 호스트 직계가 아니라 `.score-print-page-stack` 아래에 모인다.
    */
-  body.printing-score .score-print-host > div[id^='osmdCanvasPage'],
-  body.printing-score .score-print-host .score-print-page-stack > div[id^='osmdCanvasPage'] {
+  body.printing-score.printing-score--portal .score-print-host > div[id^='osmdCanvasPage'],
+  body.printing-score.printing-score--portal .score-print-host .score-print-page-stack > div[id^='osmdCanvasPage'],
+  body.printing-score.printing-score--screen .score-div > div[id^='osmdCanvasPage'] {
     break-after: page;
     page-break-after: always;
     break-inside: avoid;
@@ -210,13 +250,15 @@ body.printing-score .score-print-host {
     display: block;
   }
 
-  body.printing-score .score-print-host > div[id^='osmdCanvasPage']:last-of-type,
-  body.printing-score .score-print-host .score-print-page-stack > div[id^='osmdCanvasPage']:last-of-type {
+  body.printing-score.printing-score--portal .score-print-host > div[id^='osmdCanvasPage']:last-of-type,
+  body.printing-score.printing-score--portal .score-print-host .score-print-page-stack > div[id^='osmdCanvasPage']:last-of-type,
+  body.printing-score.printing-score--screen .score-div > div[id^='osmdCanvasPage']:last-of-type {
     break-after: auto;
     page-break-after: auto;
   }
 
-  body.printing-score .score-print-host svg {
+  body.printing-score.printing-score--portal .score-print-host svg,
+  body.printing-score.printing-score--screen .score-div svg {
     max-width: 100% !important;
     height: auto !important;
     overflow: visible !important;
