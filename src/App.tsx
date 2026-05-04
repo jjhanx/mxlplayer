@@ -41,12 +41,6 @@ import {
   type OsmdPagedFormatId,
 } from './print/configurePrintOsmd'
 import { paginatePrintedScoreSlices } from './print/measureSlicePagination'
-import {
-  restoreInlineStyle,
-  restoreOsmdPrintLayout,
-  saveInlineStyle,
-  saveOsmdPrintLayout,
-} from './print/screenScorePrint'
 import './App.css'
 
 /** OSMD GraphicalNote.setColor — SVG 백엔드에서 리렌더 없이 적용 */
@@ -481,75 +475,10 @@ export default function App() {
     if (!payload || status !== 'ready') return
 
     /**
-     * 가로 한 줄 악보가 아닐 때: 화면과 **같은 OSMD 인스턴스**(`score-div`)에 인쇄 영역(mm)만 잠시 적용.
-     * 엔들리스로 그리던 것을 OSMD가 `PageHeight` 기준으로 나누게 하여 전체가 여러 Graphical 페이지로 나감(마디 슬라이스 불필요).
+     * 인쇄는 항상 `body` 포탈의 `.score-print-host` 에서 처리.
+     * Ion 본문·flex overflow 때문에 화면 `score-div` 에 직접 인쇄하면 백지·하단 찌꺼기가 잘 발생함.
+     * 가로 한 줄 표시 여부와 무관하게 동일하게 로드 후 `paginatePrintedScoreSlices` 로 다페이지 구성.
      */
-    if (!horizontalStafflineLayout) {
-      const osmd = osmdRef.current
-      const scoreEl = scoreDivRef.current
-      if (!osmd || !scoreEl) return
-
-      setPrintBusy(true)
-      let cleaned = false
-
-      const innerBox = getPrintableContentBoxMm(printPageFormat, PRINT_PAGE_MARGIN_MM)
-      const savedLayout = saveOsmdPrintLayout(osmd)
-      const savedStyle = saveInlineStyle(scoreEl)
-
-      const teardownScreen = () => {
-        if (cleaned) return
-        cleaned = true
-        removeDynamicPrintPageCss()
-        document.body.classList.remove('printing-score', 'printing-score--screen')
-        restoreOsmdPrintLayout(osmd, savedLayout)
-        restoreInlineStyle(scoreEl, savedStyle)
-        try {
-          void scoreEl.offsetWidth
-          osmd.updateGraphic()
-          osmd.render()
-        } catch {
-          /* 복구 중 실패 무시 */
-        }
-        setPrintBusy(false)
-      }
-
-      try {
-        const eng = engineRef.current
-        if (eng && (eng.state as PlaybackState) === 'PLAYING') {
-          await eng.pause()
-          setPlaybackState(eng.state as PlaybackState)
-        }
-
-        applyDynamicPrintPageCss(printPageFormat, PRINT_PAGE_MARGIN_MM)
-        document.body.classList.add('printing-score', 'printing-score--screen')
-
-        osmd.setCustomPageFormat(innerBox.widthMm, innerBox.heightMm)
-        sizePrintHostToContentBoxMm(scoreEl, innerBox.widthMm, innerBox.heightMm)
-        applyStandardPrintEngravingMode(osmd)
-        osmd.Zoom = PRINT_OSMD_ZOOM
-
-        void scoreEl.offsetWidth
-        osmd.updateGraphic()
-        osmd.render()
-
-        await new Promise<void>((resolve) =>
-          window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve())),
-        )
-
-        const safetyFallback = window.setTimeout(teardownScreen, 120_000)
-        const onAfterPrint = () => {
-          window.clearTimeout(safetyFallback)
-          teardownScreen()
-        }
-        window.addEventListener('afterprint', onAfterPrint, { once: true })
-        window.print()
-      } catch (e) {
-        setErrorText(e instanceof Error ? e.message : String(e))
-        teardownScreen()
-      }
-      return
-    }
-
     const host = printHostRef.current
     if (!host) return
 
@@ -561,7 +490,7 @@ export default function App() {
       if (cleaned) return
       cleaned = true
       removeDynamicPrintPageCss()
-      document.body.classList.remove('printing-score', 'printing-score--portal')
+      document.body.classList.remove('printing-score')
       try {
         printOsmd?.clear()
       } catch {
@@ -574,8 +503,15 @@ export default function App() {
 
     try {
       host.innerHTML = ''
+
+      const eng = engineRef.current
+      if (eng && (eng.state as PlaybackState) === 'PLAYING') {
+        await eng.pause()
+        setPlaybackState(eng.state as PlaybackState)
+      }
+
       applyDynamicPrintPageCss(printPageFormat, PRINT_PAGE_MARGIN_MM)
-      document.body.classList.add('printing-score', 'printing-score--portal')
+      document.body.classList.add('printing-score')
 
       const innerBox = getPrintableContentBoxMm(printPageFormat, PRINT_PAGE_MARGIN_MM)
 

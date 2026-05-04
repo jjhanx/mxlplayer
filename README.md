@@ -18,9 +18,10 @@ MusicXML을 **OSMD(OpenSheetMusicDisplay)** 로 렌더링하고, **osmd-audio-pl
 - **Follow-along**: 재생 중 **실제로 들리는 파트의 음표만** 빨간색 표시(OSMD 커서 막대는 숨김). 같은 시각 성부·피아노 등 **강조 블록 전체가 패널 안에 들어오도록** 스크롤합니다. 기본은 **상하** 스크롤이며, **가로 한 줄 악보** 모드일 때는 **`playbackScroll.ts`에서 가로(`scrollLeft`)** 위주로 따라갑니다. 블록이 뷰 안에 들어갈 때만 잘리지 않게 맞추고, 재생 중에는 **짧은 간격(약 90ms)**으로 가시성을 다시 검사해 수동 스크롤 후에도 곧바로 보정합니다.
 - **가로 한 줄 악보**(선택): OSMD **`renderSingleHorizontalStaffline`** — 한 줄 가로 레일 형태로 좌우 스크롤이 자연스럽습니다. **피아노처럼 세로로 겹치는 여러 스태프**도 잘리지 않도록 세로 확보 후 **`overflow-y: auto`** 로 부족할 때 세로 바를 제공합니다(`App.css`). 재생 팔로우는 같은 모드에서 **가로·세로 모두** 강조 영역을 뷰에 맞춥니다(`playbackScroll.ts`). 옵션은 **처음 로드하기 전**에만 적용되므로, 토글 시 OSMD를 다시 붙이고 **같은 파일을 재로드**합니다.
 - **인쇄**
-  - **가로 한 줄 악보 OFF(기본 세로 악보)** : 화면과 **같은 OSMD 인스턴스**(`score-div`)만 사용. 잠시 **`setCustomPageFormat`(인쇄 영역 mm)**·`PRINT_OSMD_ZOOM`·패널 폭(`sizePrintHostToContentBoxMm`)을 적용해 `updateGraphic`/`render` 하면, 엔들리스였던 것과 달리 OSMD가 **여러 `GraphicalMusicPage`·`#osmdCanvasPage`** 로 나눈다. 인쇄 미리보기에서는 `body.printing-score--screen`(사이드바·툴바 숨김, **`#root` 유지**) CSS로 악보만 종이에 나가게 한다(`App.css`). 종료 시 **페이지 포맷은 `Endless`로, 인라인 스타일·배율 복구**(`screenScorePrint.ts`).
-  - **가로 한 줄 악보 ON** : 화면 레이아웃과 다르므로 **`document.body` 포탈의 `.score-print-host`** 에 별도 OSMD를 로드하고 **`printing-score--portal`** + `#root` 숨김 후 인쇄한다. 다페이지 보조로 `measureSlicePagination.ts` 를 사용한다.
-  - 공통: **`@page` 여백**은 `PRINT_PAGE_MARGIN_MM` 과 OSMD에 넘기는 mm와 동일. 브라우저 **배율 100%** 권장.
+  - **`document.body` 포탈의 `.score-print-host`** 에 **별도 OSMD**를 만들고, 같은 원본(`mxl`/문자열)을 **다시 로드**합니다(`App.tsx`). Ion `ion-content`·`.main` 의 `overflow`/스크롤 때문에 **화면 `score-div`에 직접 인쇄하면** 백지·미리보기 하단 찌꺼기가 잘 나와, 화면 인스턴스를 쓰지 않습니다.
+  - 화면이 **가로 한 줄**이든 **세로**이든 인쇄는 항상 **`renderSingleHorizontalStaffline: false`** + `setCustomPageFormat`(인쇄 영역 mm) + `PRINT_OSMD_ZOOM` 등(`configurePrintOsmd.ts`). 인쇄 시 `body.printing-score` + `@media print` 로 **`#root`/`.app-shell` 숨김** 후 포탈 호스트만 종이로 나갑니다(`App.css`).
+  - **다페이지**: `measureSlicePagination.ts` — 첫 렌더 뒤 **`#osmdCanvasPage` 용지 블록이 DOM 에 2개 이상**이면 OSMD 분할을 신뢰하고 그대로 스택에 옮깁니다. **1블록뿐이면**(내부 `MusicPages` 수와 무관) **마디 블록(`PRINT_MEASURES_PER_SLICE`, 기본 4)으로 재렌더**해 여러 용지로 이어지게 합니다.
+  - **`@page` 여백**은 `PRINT_PAGE_MARGIN_MM` 과 OSMD에 넘기는 mm와 동일. 브라우저 **배율 100%** 권장.
 
 ## 기술 참고
 
@@ -32,7 +33,7 @@ MusicXML을 **OSMD(OpenSheetMusicDisplay)** 로 렌더링하고, **osmd-audio-pl
 
 - **파트별 게인**: `src/audio/playbackNoteCallbackPatch.ts`에서 OSMD `Note` 기준 악기 인덱스로 Solo/Mute/볼륨을 적용합니다.
 - **재생 따라가기·스크롤**: `src/audio/playbackScroll.ts` — `scrollHighlightedNotesIntoView(..., layout)` 네 번째 인자로 `'default'(세로)` / `'horizontal-strip'(가로+필요 시 세로 보정)'` 를 둡니다. 가로 줄 모드에서는 **시간 따라가기는 좌우**가 주이되, 피아노 등 **위·아래 스태프가 뷰 밖이면 세로 보정도** 합니다. `App.tsx`의 재생 폴링과 `PlaybackEvent.ITERATION` 핸들러는 **최신 레이아웃(ref)** 과 일치하게 호출합니다.
-- **가로 줄·인쇄 전환**: 화면용 OSMD는 위「가로 한 줄 악보」와 동일합니다. 인쇄는 **가로 줄 OFF → 화면 인스턴스 + `printing-score--screen`** , **가로 줄 ON → 포탈 호스트 + 별 OSMD + `printing-score--portal`** 으로 분기합니다(`App.tsx`).
+- **가로 줄 표시와 인쇄**: 화면용 OSMD는 위「가로 한 줄 악보」 토글에 따릅니다. **인쇄는 항상** 포탈·별 인스턴스·세로 페이지 레이아웃으로 동작합니다(`App.tsx`, `App.css`).
 - **악기 인덱스**: `src/audio/instrumentIndexFromNote.ts` — `Instruments` 배열 참조 실패 시 `Instrument.Id` / `IdString`으로 매칭합니다.
 
 ## 실행 (웹)

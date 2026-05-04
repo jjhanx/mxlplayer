@@ -52,6 +52,11 @@ export function graphicalMusicPagesCount(osmd: OpenSheetMusicDisplay): number {
   }
 }
 
+/** OSMD 가 실제로 mount 직속에 깐 용지 래퍼 수 — 내부 `MusicPages` 수와 불일치할 때가 있음(한 div 안에 장 다수 등). */
+function domOsmdCanvasPageCount(mount: HTMLElement): number {
+  return mount.querySelectorAll(":scope > div[id^='osmdCanvasPage']").length
+}
+
 function resolvePageStackSibling(mount: HTMLElement): HTMLElement | null {
   const prev = mount.previousElementSibling
   if (prev instanceof HTMLElement && prev.classList.contains('score-print-page-stack')) return prev
@@ -84,13 +89,15 @@ export function paginatePrintedScoreSlices(
   osmd.updateGraphic()
   osmd.render()
 
-  const pageCount = graphicalMusicPagesCount(osmd)
-
-  /** OSMD가 이미 여러 Graphical 페이지를 만들었으면 그대로 한 번 옮김 — 마디 블록 슬라이스 불필요 */
-  if (pageCount >= 2) {
+  /** DOM 에 용지 래퍼가 둘 이상이면 OSMD 분할 신뢰 — 마디 슬라이스 생략. `MusicPages` 만 보고 분기하면 한 div 장문 SVG 인쇄 1장 이슈가 남음 */
+  const domPages = domOsmdCanvasPageCount(mount)
+  if (domPages >= 2) {
     moveRenderedOsmdPages(mount, stack)
+    resetDrawMeasureIndexWindow(osmd)
     return
   }
+
+  /** DOM 이 단일 블록 뿐이면 마디 블록별 재렌더로 여러 용지 div 생성 */
 
   /**
    * Graphical 페이지가 1장뿐이면 소스 마디 수와 무관하게 **블록별로 재렌더**해야 인쇄 시 여러 `div#osmdCanvasPage`(→ 용지)로 이어지는 경우가 많음.
