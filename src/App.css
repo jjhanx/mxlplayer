@@ -126,6 +126,7 @@
   left: -99999px;
   top: 0;
   box-sizing: border-box;
+  /** 초기값 — 실제 폭은 페이지(mm)로 JS에서 덮어서 OSMD가 가로 전체를 계산하도록 함 */
   width: 794px;
   min-height: 1123px;
   background: #ffffff;
@@ -133,6 +134,10 @@
   opacity: 0;
   overflow: visible;
   pointer-events: none;
+}
+
+.score-print-host svg {
+  overflow: visible !important;
 }
 
 body.printing-score .score-print-host {
@@ -159,6 +164,11 @@ body.printing-score .score-print-host {
     z-index: 1 !important;
     overflow: visible !important;
     background: #ffffff !important;
+  }
+
+  body.printing-score .score-print-host svg {
+    max-width: none !important;
+    height: auto !important;
   }
 }
 

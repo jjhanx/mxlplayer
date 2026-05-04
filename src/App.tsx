@@ -30,6 +30,11 @@ import {
   PLAYBACK_SCROLL_KEEP_VISIBLE_MS,
   type PlaybackScrollLayoutMode,
 } from './audio/playbackScroll'
+import {
+  compactPrintSpacingForMeasuresPerSystemTarget,
+  sizeDomHostLikeOsmdPrintPage,
+  type OsmdPagedFormatId,
+} from './print/configurePrintOsmd'
 import './App.css'
 
 /** OSMD GraphicalNote.setColor — SVG 백엔드에서 리렌더 없이 적용 */
@@ -49,8 +54,6 @@ function isAllowedScoreFile(file: File): boolean {
 }
 
 type LastScorePayload = { kind: 'mxl'; blob: Blob } | { kind: 'xml'; text: string }
-
-type OsmdPagedFormatId = 'A4_P' | 'A4_L' | 'Letter_P' | 'Letter_L'
 
 const PRINT_CSS_PAGE_SIZE: Record<OsmdPagedFormatId, string> = {
   A4_P: 'A4 portrait',
@@ -499,6 +502,11 @@ export default function App() {
       })
 
       await printOsmd.load(payload.kind === 'mxl' ? payload.blob : payload.text)
+
+      sizeDomHostLikeOsmdPrintPage(printPageFormat, host)
+      compactPrintSpacingForMeasuresPerSystemTarget(printOsmd)
+      printOsmd.updateGraphic()
+
       printOsmd.render()
 
       /** SVG/Vex 레이아웃 확정까지 — 메인 문서라 iframe 0영역 백지와 달리 OSMD가 실제 박스로 그림 */
