@@ -17,7 +17,7 @@ MusicXML을 **OSMD(OpenSheetMusicDisplay)** 로 렌더링하고, **osmd-audio-pl
 - **파트별 믹싱**: **악기(파트) 인덱스** 기준 Volume / Solo / Mute (동일 MIDI GM 번호를 쓰는 파트도 UI·소리 분리)
 - **Follow-along**: 재생 중 **실제로 들리는 파트의 음표만** 빨간색 표시(OSMD 커서 막대는 숨김). 같은 시각 성부·피아노 등 **강조 블록 전체가 패널 안에 들어오도록** 스크롤합니다. 기본은 **상하** 스크롤이며, **가로 한 줄 악보** 모드일 때는 **`playbackScroll.ts`에서 가로(`scrollLeft`)** 위주로 따라갑니다. 블록이 뷰 안에 들어갈 때만 잘리지 않게 맞추고, 재생 중에는 **짧은 간격(약 90ms)**으로 가시성을 다시 검사해 수동 스크롤 후에도 곧바로 보정합니다.
 - **가로 한 줄 악보**(선택): OSMD **`renderSingleHorizontalStaffline`** — 한 줄 가로 레일 형태로 좌우 스크롤이 자연스럽습니다. **피아노처럼 세로로 겹치는 여러 스태프**도 잘리지 않도록 세로 확보 후 **`overflow-y: auto`** 로 부족할 때 세로 바를 제공합니다(`App.css`). 재생 팔로우는 같은 모드에서 **가로·세로 모두** 강조 영역을 뷰에 맞춥니다(`playbackScroll.ts`). 옵션은 **처음 로드하기 전**에만 적용되므로, 토글 시 OSMD를 다시 붙이고 **같은 파일을 재로드**합니다.
-- **인쇄**: 같은 문서 **`.score-print-host`** 에 OSMD를 다시 렌더합니다. **`@page` 여백(`PRINT_PAGE_MARGIN_MM`)** 과 같은 값으로 **실제 인쇄 가능 영역(mm)** 을 `setCustomPageFormat` 으로 넘겨, 레이아웃과 브라우저 인쇄 영역 불일치(오른쪽 마디선 잘림)를 줄였습니다. **화면 가로 한 줄 모드와 관계없이** 인쇄에서는 `renderSingleHorizontalStaffline: false` 로 **표준 다페이지**로 나가며 줄마다 음자리·조표·박자표는 OSMD 기본입니다. 브라우저 **인쇄 배율은 100%** 권장, 밀도는 **`PRINT_OSMD_ZOOM`** 과 간격 규칙으로 조정합니다. `@media print` 에서 페이지별 루트 **svg** 에 `break-after: page` 를 둡니다(`App.css`).
+- **인쇄**: 같은 문서 **`.score-print-host`** 에 OSMD를 다시 렌더합니다. **`@page` 여백(`PRINT_PAGE_MARGIN_MM`)** 과 같은 값으로 **실제 인쇄 가능 영역(mm)** 을 `setCustomPageFormat` 으로 넘겨, 레이아웃과 브라우저 인쇄 영역 불일치(오른쪽 마디선 잘림)를 줄였습니다. **화면 가로 한 줄 모드와 관계없이** 인쇄에서는 `renderSingleHorizontalStaffline: false` 로 **표준 다페이지**로 나가며 줄마다 음자리·조표·박자표는 OSMD 기본입니다. 브라우저 **인쇄 배율은 100%** 권장, 밀도는 **`PRINT_OSMD_ZOOM`** 과 간격 규칙으로 조정합니다. `@media print` 에서 OSMD가 넣는 **`div#osmdCanvasPage{n}` 직계마다** `break-after: page` 를 둠(내부 `svg` 는 직계가 아님).
 
 ## 기술 참고
 

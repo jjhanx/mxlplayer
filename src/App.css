@@ -170,15 +170,18 @@ body.printing-score .score-print-host {
   }
 
   /**
-   * OSMD SVG: 페이지별로 호스트 바로 아래 형제 svg 가 생기는 것이 일반적.
+   * OSMD: 페이지마다 컨테이너 바로 아래에 `div#osmdCanvasPage{n}` 추가 후 그 안에 svg(`#osmdSvgPage{n}`).
+   * 직계 `svg` 에만 나누면 규칙이 한 번도 안 먹어 한 장만 나옴.
    */
-  body.printing-score .score-print-host > svg {
+  body.printing-score .score-print-host > div[id^='osmdCanvasPage'] {
     break-after: page;
     page-break-after: always;
+    break-inside: avoid;
+    page-break-inside: avoid;
     display: block;
   }
 
-  body.printing-score .score-print-host > svg:last-of-type {
+  body.printing-score .score-print-host > div[id^='osmdCanvasPage']:last-of-type {
     break-after: auto;
     page-break-after: auto;
   }
