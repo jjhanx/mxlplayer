@@ -1,7 +1,10 @@
 import type { MusicSheet, OpenSheetMusicDisplay } from 'opensheetmusicdisplay'
 
-/** 소스 마디 색인(0…) 블록 단위 분할 크기 — OSMD가 한 Graphical 페이지에만 쌓아도 물리 인쇄는 여러 장으로 나가게 함 */
-export const PRINT_MEASURES_PER_SLICE = 8
+/**
+ * 소스 마디 색인(0…) 블록 단위 분할 크기 — OSMD가 모든 시스템을 한 Graphical 페이지에 세로로 쌓는 경우가 많아,
+ * 브라우저 인쇄 한 장 분량을 넘지 않도록 **작게** 둠(블록 많을수록 `window.print` 다장으로 이어지기 유리).
+ */
+export const PRINT_MEASURES_PER_SLICE = 4
 
 /**
  * ImplicitMeasure 처리 분기(MinMeasureToDrawNumber 등)가 색인을 덮어쓸 수 있어,
@@ -58,7 +61,7 @@ function resolvePageStackSibling(mount: HTMLElement): HTMLElement | null {
 /**
  * 형제 순서: `score-print-host` 안에 **`score-print-page-stack` 다음 `score-print-mount`(OSMD 에 넘긴 렌더 루트)**.
  * 먼저 전체 마디로 렌더 — OSMD가 여러 Graphical 페이지면 그 div 만 스택으로 옮김.
- * 한 Graphical 페이지에만 쌓이고 소스 마디가 `measureChunkSize`보다 길면 마디 색인 블록별로 재렌더해 순서대로 스택에 추가.
+ * OSMD가 통째 레이아웃 시 한 Graphical 페이지 안에 길게 쌓는 경우 마디 블록별로 재렌더해 `#osmdCanvasPage` 를 여러 개 만들고 순서대로 스택에 둠.
  */
 export function paginatePrintedScoreSlices(
   osmd: OpenSheetMusicDisplay,
@@ -83,12 +86,16 @@ export function paginatePrintedScoreSlices(
 
   const pageCount = graphicalMusicPagesCount(osmd)
 
-  /** 짧은 악보거나 OSMD가 이미 페이지를 여러 장으로 만들었음 */
-  if (pageCount >= 2 || sm.length <= measureChunkSize) {
+  /** OSMD가 이미 여러 Graphical 페이지를 만들었으면 그대로 한 번 옮김 — 마디 블록 슬라이스 불필요 */
+  if (pageCount >= 2) {
     moveRenderedOsmdPages(mount, stack)
     return
   }
 
+  /**
+   * Graphical 페이지가 1장뿐이면 소스 마디 수와 무관하게 **블록별로 재렌더**해야 인쇄 시 여러 `div#osmdCanvasPage`(→ 용지)로 이어지는 경우가 많음.
+   * (예: 마디 수 ≤ 블록 크기였다고 통째만 그리면 한 장짜리 긴 SVG가 될 수 있음.)
+   */
   mount.replaceChildren()
 
   const chunk = Math.max(1, measureChunkSize)
