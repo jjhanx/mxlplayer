@@ -29,9 +29,11 @@ MusicXML을 **OSMD(OpenSheetMusicDisplay)** 로 렌더링하고, **osmd-audio-pl
   - **템포 누적 가속(1)**: `PlaybackScheduler.reset()`이 잘못된 인자로 `clearInterval`을 호출해 핸들이 남는 문제 → `schedulerIntervalHandle`로 정리.
   - **템포 누적 가속(2)**: `PlaybackEngine.loadScore()`가 교체되는 **기존** `PlaybackScheduler`에 `reset()`을 호출하지 않아, 예전 인스턴스의 `setInterval`이 계속 실행될 수 있음 → `patchPlaybackEngine.ts`에서 `loadScore` 앞단에 이전 스케줄러 `reset()` 추가.
   - **`start()` 이중 타이머 방지**: `PlaybackScheduler.start()`가 기존 인터벌을 항상 지운 뒤 하나만 등록하도록 교체 (`patchPlaybackScheduler.ts`).
-  - **`loadNotes` 타임라인**: 원래 `getFirstEmptyTick()` 플레이스홀더에 의존하면 다성부·백업이 있는 악보에서 스텝 간격이 압축돼 **같은 BPM인데도 특정 구간만 빨라진 것처럼** 들릴 수 있음 → OSMD `VoiceEntry.ParentSourceStaffEntry.AbsoluteTimestamp`로 재생 틱을 직접 잡고(`patchPlaybackScheduler.ts`), 타임스탬프가 없으면 구현에 폴백.
+  - **`loadNotes` 타임라인**: 원래 `getFirstEmptyTick()` 플레이스홀더에 의존하면 다성부·백업이 있는 악보에서 스텝 간격이 압축돼 **같은 BPM인데도 특정 구간만 빨라진 것처럼** 들릴 수 있음 → OSMD `VoiceEntry.ParentSourceStaffEntry.AbsoluteTimestamp`가 있으면 재생 틱을 직접 잡음(`patchPlaybackScheduler.ts`). **타임스탬프가 없을 때는 라이브러리 원본 `loadNotes`로 폴백하지 않는다.** 원본 구현은 `note.Length.RealValue`를 검사 없이 읽어 일부 MusicXML(예: Audiveris 변환)에서 런타임 예외가 날 수 있기 때문이다. 대신 동일한 상대 틱 방식(`lastTickOffset` / `getFirstEmptyTick`)을 유지하면서 `note.Length?.RealValue`가 유효한 음표만 스케줄한다.
 
-- **파트별 게인**: `src/audio/playbackNoteCallbackPatch.ts`에서 OSMD `Note` 기준 악기 인덱스로 Solo/Mute/볼륨을 적용합니다.
+- **MXL ZIP 내부 파일명 정규화** (`src/utils/normalizeMxlBlob.ts`): ZIP 안 악보 파일 이름이 한글 등 비 ASCII일 때, 브라우저·ZIP 처리 조합에 따라 OSMD가 엔트리를 찾지 못하는 경우가 있다. **일반 로드와 인쇄 경로 모두** `osmd.load()` 직전에 ZIP을 열어 본문 XML만 **`score.xml`** 으로 고정하고 `META-INF/container.xml`을 그에 맞게 다시 쓴 Blob으로 바꿔 준다(`App.tsx`). 정규화에 실패하면 경고만 남기고 **원본 Blob**으로 그대로 로드한다.
+
+- **파트별 게인**: `src/audio/playbackNoteCallbackPatch.ts`에서 OSMD `Note` 기준 악기 인덱스로 Solo/Mute/볼륨을 적용한다. 음표 길이(`getNoteDuration`)는 **`note.Length?.RealValue`** 및 이어진 음의 동일 가드로 계산해, `Length`가 비어 있는 음표에서 재생 콜백이 멈추지 않도록 한다.
 - **재생 따라가기·스크롤**: `src/audio/playbackScroll.ts` — `scrollHighlightedNotesIntoView(..., layout)` 네 번째 인자로 `'default'(세로)` / `'horizontal-strip'(가로+필요 시 세로 보정)'` 를 둡니다. 가로 줄 모드에서는 **시간 따라가기는 좌우**가 주이되, 피아노 등 **위·아래 스태프가 뷰 밖이면 세로 보정도** 합니다. `App.tsx`의 재생 폴링과 `PlaybackEvent.ITERATION` 핸들러는 **최신 레이아웃(ref)** 과 일치하게 호출합니다.
 - **가로 줄 표시와 인쇄**: 화면용 OSMD는 위「가로 한 줄 악보」 토글에 따릅니다. **인쇄는 항상** 포탈·별 인스턴스·세로 페이지 레이아웃으로 동작합니다(`App.tsx`, `App.css`).
 - **악기 인덱스**: `src/audio/instrumentIndexFromNote.ts` — `Instruments` 배열 참조 실패 시 `Instrument.Id` / `IdString`으로 매칭합니다.

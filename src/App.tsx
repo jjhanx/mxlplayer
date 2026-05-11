@@ -31,6 +31,7 @@ import {
   PLAYBACK_SCROLL_KEEP_VISIBLE_MS,
   type PlaybackScrollLayoutMode,
 } from './audio/playbackScroll'
+import { normalizeMxlBlob } from './utils/normalizeMxlBlob'
 import {
   getPrintableContentBoxMm,
   PRINT_PAGE_MARGIN_MM,
@@ -390,7 +391,13 @@ export default function App() {
     resetPlaybackHighlights(playbackHighlightedRef)
 
     if (payload.kind === 'mxl') {
-      await osmd.load(payload.blob)
+      let blob = payload.blob
+      try {
+        blob = await normalizeMxlBlob(blob)
+      } catch (err) {
+        console.warn('[mxlplayer] MXL 정규화 실패 — 원본으로 로드합니다.', err)
+      }
+      await osmd.load(blob)
     } else {
       await osmd.load(payload.text)
     }
@@ -516,7 +523,16 @@ export default function App() {
       /** OSMD render() 가 `container.offsetWidth` 로 페이지 폭을 잡음 — load 전에 맞춤(OSMD 붙는 노드는 mount) */
       sizePrintHostToContentBoxMm(printMount, innerBox.widthMm, innerBox.heightMm)
 
-      await printOsmd.load(payload.kind === 'mxl' ? payload.blob : payload.text)
+      let loadSource: Blob | string =
+        payload.kind === 'mxl' ? payload.blob : payload.text
+      if (payload.kind === 'mxl') {
+        try {
+          loadSource = await normalizeMxlBlob(payload.blob)
+        } catch (err) {
+          console.warn('[mxlplayer] MXL 정규화 실패(인쇄) — 원본으로 로드합니다.', err)
+        }
+      }
+      await printOsmd.load(loadSource)
       
       const rules = printOsmd.EngravingRules
       rules.RenderSingleHorizontalStaffline = false

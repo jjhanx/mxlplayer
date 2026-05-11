@@ -23,9 +23,9 @@ import PlaybackScheduler from 'osmd-audio-player/dist/PlaybackScheduler.js'
 /** OSMD VoiceEntry — PlaybackScheduler 에 넘어오는 구조만 추출 */
 type OsmdVoiceEntry = {
   IsGrace?: boolean
-  Notes: { Length: { RealValue: number } }[]
+  Notes?: { Length?: { RealValue: number } }[]
   ParentSourceStaffEntry?: {
-    AbsoluteTimestamp: { RealValue: number }
+    AbsoluteTimestamp?: { RealValue: number }
   }
 }
 
@@ -34,6 +34,7 @@ type StepQueueOps = {
   sort: () => void
   addNote: (tick: number, note: unknown) => void
   createStep: (tick: number) => unknown
+  getFirstEmptyTick: () => number
 }
 
 type SchedulerLike = {
@@ -67,10 +68,17 @@ type SchedulerTimeline = SchedulerLike & {
 
 const lastScheduleAudioSampleMs = new WeakMap<object, number>()
 
-const builtinLoadNotes = PlaybackScheduler.prototype.loadNotes as (
-  this: SchedulerTimeline,
-  entries: OsmdVoiceEntry[],
-) => void
+function appendVoiceEntriesAtTick(this: SchedulerTimeline, ves: OsmdVoiceEntry[], thisTick: number): void {
+  for (const entry of ves) {
+    if (entry.IsGrace) continue
+    for (const note of entry.Notes ?? []) {
+      const len = note.Length?.RealValue
+      if (len === undefined || Number.isNaN(len)) continue
+      this.stepQueue.addNote(thisTick, note)
+      this.stepQueue.createStep(thisTick + len * this.tickDenominator)
+    }
+  }
+}
 
 const proto = PlaybackScheduler.prototype as unknown as {
   start: (this: SchedulerLike) => void
@@ -89,26 +97,23 @@ proto.loadNotes = function loadNotesAbsoluteTime(this: SchedulerTimeline, ves: O
     if (t === undefined || Number.isNaN(t)) continue
     stamp = stamp === undefined ? t : Math.min(stamp, t)
   }
+
+  let thisTick: number
   if (stamp === undefined) {
-    builtinLoadNotes.call(this, ves)
-    return
-  }
-
-  if (this.timelineOriginWhole === undefined) {
-    this.timelineOriginWhole = stamp
-  }
-  const thisTick =
-    Math.round((stamp - this.timelineOriginWhole) * this.tickDenominator) + this.lastTickOffset
-
-  for (const entry of ves) {
-    if (entry.IsGrace) continue
-    for (const note of entry.Notes) {
-      const len = note.Length?.RealValue
-      if (len === undefined || Number.isNaN(len)) continue
-      this.stepQueue.addNote(thisTick, note)
-      this.stepQueue.createStep(thisTick + len * this.tickDenominator)
+    /** 라이브러리 기본 loadNotes 는 Length 없으면 throw — 동일 로직에 안전 가드 */
+    thisTick = this.lastTickOffset
+    if (this.stepQueue.steps.length > 0) {
+      thisTick = this.stepQueue.getFirstEmptyTick()
     }
+  } else {
+    if (this.timelineOriginWhole === undefined) {
+      this.timelineOriginWhole = stamp
+    }
+    thisTick =
+      Math.round((stamp - this.timelineOriginWhole) * this.tickDenominator) + this.lastTickOffset
   }
+
+  appendVoiceEntriesAtTick.call(this, ves, thisTick)
 }
 
 proto.start = function startPatched(this: SchedulerLike): void {

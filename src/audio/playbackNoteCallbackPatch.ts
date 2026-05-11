@@ -20,10 +20,16 @@ function getArticulationStyle(note: Note): ArticulationStyle {
 }
 
 function getNoteDuration(note: Note, wholeNoteLength: number): number {
-  let duration = note.Length.RealValue * wholeNoteLength
+  const len = note.Length?.RealValue
+  if (len === undefined || Number.isNaN(len)) return 0
+
+  let duration = len * wholeNoteLength
   if (note.NoteTie) {
     if (Object.is(note.NoteTie.StartNote, note) && note.NoteTie.Notes[1]) {
-      duration += note.NoteTie.Notes[1].Length.RealValue * wholeNoteLength
+      const tiedLen = note.NoteTie.Notes[1].Length?.RealValue
+      if (tiedLen !== undefined && !Number.isNaN(tiedLen)) {
+        duration += tiedLen * wholeNoteLength
+      }
     } else {
       duration = 0
     }
